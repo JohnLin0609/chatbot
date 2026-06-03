@@ -1,4 +1,4 @@
-"""Wire concrete dependencies (Redis, Postgres, LLM) into PipelineDeps."""
+"""Wire concrete dependencies (Redis, Postgres, LLM, RAG) into PipelineDeps."""
 
 from redis.asyncio import Redis
 
@@ -9,8 +9,12 @@ from core.llm.factory import build_chat_service
 from core.memory.hot_store import HotStore
 from core.persistence.db import create_engine, create_sessionmaker
 from core.pipeline import PipelineDeps
+from core.rag.embeddings import build_embedding_service
+from core.rag.vector_store import QdrantVectorStore
 from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
+from core.tools.loop import ToolRunner
+from core.tools.registry import ToolRegistry, register_default_tools
 
 
 def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
@@ -22,6 +26,15 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
     counter = TokenCounter(settings.tiktoken_encoding)
     user_memory_store = UserMemoryStore(redis, settings)
     fact_extractor = FactExtractor(settings, chat_service, counter)
+
+    embedding_service = build_embedding_service(settings)
+    vector_store = QdrantVectorStore(
+        settings.qdrant_url, settings.qdrant_collection, settings.embedding_dim
+    )
+    registry = ToolRegistry()
+    register_default_tools(registry)
+    tool_runner = ToolRunner(chat_service, registry, settings)
+
     return PipelineDeps(
         settings=settings,
         hot_store=hot_store,
@@ -31,4 +44,7 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
         token_counter=counter,
         user_memory_store=user_memory_store,
         fact_extractor=fact_extractor,
+        tool_runner=tool_runner,
+        embedding_service=embedding_service,
+        vector_store=vector_store,
     )

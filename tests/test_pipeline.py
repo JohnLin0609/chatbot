@@ -14,8 +14,10 @@ from core.persistence.models import Message, Session, UserMemory
 from core.pipeline import PipelineDeps, handle_inbound
 from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
+from core.tools.loop import ToolRunner
+from core.tools.registry import ToolRegistry
 from shared.events import InboundEvent, make_session_id
-from tests.conftest import FakeChat, make_settings
+from tests.conftest import FakeChat, FakeEmbedding, FakeVectorStore, make_settings
 
 
 def _inbound(text: str, user_id="U1", channel="c1") -> InboundEvent:
@@ -26,20 +28,25 @@ def _inbound(text: str, user_id="U1", channel="c1") -> InboundEvent:
     )
 
 
-def _deps(settings, redis, sessionmaker, chat):
+def _deps(settings, redis, sessionmaker, chat, registry=None):
     counter = TokenCounter(settings.tiktoken_encoding)
     hot = HotStore(redis, settings)
     store = UserMemoryStore(redis, settings)
+    registry = registry or ToolRegistry()
     return PipelineDeps(
         settings=settings, hot_store=hot, sessionmaker=sessionmaker, chat_service=chat,
         summarizer=Summarizer(settings, chat), token_counter=counter,
         user_memory_store=store, fact_extractor=FactExtractor(settings, chat, counter),
+        tool_runner=ToolRunner(chat, registry, settings),
+        embedding_service=FakeEmbedding(), vector_store=FakeVectorStore(),
     )
 
 
 class FactAwareChat:
     """Returns fact JSON for the extraction prompt, summaries for the summary
     prompt, and an echo otherwise."""
+
+    supports_tools = False
 
     def __init__(self, settings):
         self._fact_prompt = settings.fact_system_prompt
@@ -58,6 +65,12 @@ class FactAwareChat:
             return "channel summary"
         last_user = [m for m in messages if m["role"] == "user"][-1]["content"]
         return f"reply-to:{last_user}"
+
+    async def complete(self, key, messages, tools=None):
+        from core.tools.schemas import ChatCompletionResult
+
+        text = await self.generate_reply(key, messages)
+        return ChatCompletionResult(text=text, raw_assistant_message={"role": "assistant", "content": text})
 
 
 # --------------------------------------------------------------- basic
@@ -92,7 +105,12 @@ async def test_memory_carries_across_turns(redis, sessionmaker):
 
 async def test_llm_error_returns_error_without_persisting(redis, sessionmaker):
     class BoomChat:
+        supports_tools = False
+
         async def generate_reply(self, key, messages):
+            raise ChatServiceError("upstream down")
+
+        async def complete(self, key, messages, tools=None):
             raise ChatServiceError("upstream down")
 
     s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
@@ -176,3 +194,54 @@ async def test_fact_extraction_async_helper(redis, sessionmaker):
         row = (await db.execute(select(UserMemory).where(UserMemory.user_key == "line:U1"))).scalar_one_or_none()
     assert row is not None and "name" in row.document["facts"]
     assert row.last_extracted_message_id is not None
+
+
+# --------------------------------------------------------------- tier-4 (tools)
+async def test_pipeline_routes_through_tool_loop(redis, sessionmaker):
+    """A tool-capable model calls search_knowledge; the pipeline executes it and
+    returns the final answer."""
+    from core.rag.vector_store import Hit
+    from core.tools.schemas import ChatCompletionResult, Tool, ToolCall
+
+    seen_tool_output = {}
+
+    async def fake_search(args, ctx):
+        hits = await ctx.vector_store.search([0.0], 5, source="curated")
+        seen_tool_output["text"] = hits[0].text
+        return hits[0].text
+
+    registry = ToolRegistry()
+    registry.register(Tool(name="search_knowledge", description="d",
+                           parameters={"type": "object", "properties": {}}, handler=fake_search))
+
+    class ToolChat:
+        supports_tools = True
+
+        def __init__(self):
+            self._step = 0
+
+        async def generate_reply(self, key, messages):
+            return "fallback"
+
+        async def complete(self, key, messages, tools=None):
+            self._step += 1
+            if self._step == 1 and tools:
+                return ChatCompletionResult(
+                    text=None,
+                    tool_calls=[ToolCall(id="c1", name="search_knowledge", arguments={"query": "refund"})],
+                    raw_assistant_message={"role": "assistant", "tool_calls": [
+                        {"id": "c1", "type": "function",
+                         "function": {"name": "search_knowledge", "arguments": "{}"}}]},
+                )
+            return ChatCompletionResult(text="Refunds take 30 days.",
+                                        raw_assistant_message={"role": "assistant", "content": "Refunds take 30 days."})
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000_000)
+    chat = ToolChat()
+    deps = _deps(s, redis, sessionmaker, chat, registry=registry)
+    deps.vector_store = FakeVectorStore(hits=[Hit(text="Refund within 30 days", score=0.9, title="Refund", payload={})])
+
+    out = await handle_inbound(_inbound("how do refunds work?"), deps)
+    assert out.status == "ok"
+    assert out.text == "Refunds take 30 days."
+    assert seen_tool_output["text"] == "Refund within 30 days"  # tool actually ran

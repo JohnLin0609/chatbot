@@ -115,6 +115,28 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------- Gateway
     reply_timeout_seconds: float = 30.0  # how long /chat and the CLI wait for a reply
 
+    # ----------------------------------------------- Tier-4 RAG / vector store
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "knowledge"
+
+    # Embedding model — fixed for the whole collection, independent of `provider`.
+    embedding_provider: str = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = 1536
+    embedding_batch_size: int = 64
+
+    # RAG retrieval (used by the search_knowledge tool).
+    rag_top_k: int = 5
+    rag_score_threshold: float = 0.0  # 0 = no threshold; tune after observing scores
+
+    # Curated-document ingestion chunking.
+    ingest_chunk_tokens: int = 512
+    ingest_chunk_overlap: int = 64
+
+    # ------------------------------------------------------------- Tools
+    enable_tools: bool = True
+    tool_max_iterations: int = 4
+
     @property
     def model_name(self) -> str:
         """Resolved model: explicit MODEL, else the provider default."""

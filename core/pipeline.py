@@ -24,8 +24,12 @@ from core.memory.context_builder import build_context
 from core.memory.hot_store import HotStore
 from core.memory.token_window import select_window
 from core.persistence import repository as repo
+from core.rag.embeddings import EmbeddingService
+from core.rag.vector_store import QdrantVectorStore
 from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
+from core.tools.loop import ToolRunner
+from core.tools.schemas import ToolContext
 from shared.events import InboundEvent, OutboundEvent
 
 
@@ -39,6 +43,9 @@ class PipelineDeps:
     token_counter: TokenCounter
     user_memory_store: UserMemoryStore
     fact_extractor: FactExtractor
+    tool_runner: ToolRunner
+    embedding_service: EmbeddingService
+    vector_store: QdrantVectorStore
 
 
 def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
@@ -102,8 +109,19 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             user_text=inbound.text,
         )
 
+        # Main reply runs through the tool-calling loop (the model may call
+        # search_knowledge). tier-1/2/3 injection above is unchanged; RAG only
+        # enters via tools. Degrades to a single completion when tools are off.
+        tool_ctx = ToolContext(
+            settings=settings,
+            embedding_service=deps.embedding_service,
+            vector_store=deps.vector_store,
+            session_id=session_key,
+            user_key=user_key,
+            channel_id=inbound.channel_id,
+        )
         try:
-            reply = await deps.chat_service.generate_reply(session_key, messages)
+            reply = await deps.tool_runner.run(session_key, messages, tool_ctx)
         except ChatServiceError as exc:
             await db.rollback()
             return _outbound(inbound, status="error", error=str(exc))

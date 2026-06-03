@@ -5,10 +5,13 @@ from core.llm.gemini_service import GeminiChatService
 from core.llm.messages import build_messages, split_system
 from core.llm.ollama_service import OllamaChatService
 from core.llm.openai_service import OpenAIChatService
+from core.tools.schemas import ChatCompletionResult, ToolCall
 
 __all__ = [
     "ChatService",
     "ChatServiceError",
+    "ChatCompletionResult",
+    "ToolCall",
     "build_chat_service",
     "build_messages",
     "split_system",

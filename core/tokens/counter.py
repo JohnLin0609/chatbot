@@ -38,3 +38,14 @@ class TokenCounter:
 
     def count_turns(self, turns: list[dict]) -> int:
         return sum(self.count_turn(t) for t in turns)
+
+    # --- token-id access for chunking (falls back to char slices offline) ---
+    def encode(self, text: str) -> list[int]:
+        if self._encoder is None:
+            return [ord(c) for c in text]  # char-based fallback
+        return self._encoder.encode(text)
+
+    def decode(self, tokens: list[int]) -> str:
+        if self._encoder is None:
+            return "".join(chr(t) for t in tokens)
+        return self._encoder.decode(tokens)

@@ -32,6 +32,11 @@ async def run() -> None:
     consumer = f"worker-{socket.gethostname()}-{id(object()) & 0xffff}"
 
     await rc.ensure_group(redis, settings.inbound_stream, settings.core_consumer_group)
+    # Ensure the RAG collection exists (used by the search_knowledge tool).
+    try:
+        await deps.vector_store.ensure_collection()
+    except Exception:  # noqa: BLE001 — Qdrant optional; tool degrades if absent
+        log.warning("could not ensure Qdrant collection (RAG tool may be unavailable)")
     log.info("worker %s consuming %s", consumer, settings.inbound_stream)
 
     while True:
