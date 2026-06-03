@@ -1,22 +1,36 @@
-"""Assemble the LLM context from hot-store state (summary + recent turns)."""
+"""Assemble the final LLM message list from all memory tiers.
+
+Order: system persona → channel summary (tier-2) → speaker personal memory
+(tier-3) → in-window turns (tier-1) → current user message.
+"""
 
 from core.config import Settings
-from core.llm.messages import build_messages
 
 
 def build_context(
     settings: Settings,
-    summary: dict | None,
-    turns: list[dict],
+    *,
+    channel_summary_text: str,
+    personal_memory_text: str,
+    window_turns: list[dict],
     user_text: str,
 ) -> list[dict]:
-    """Build the message list: system + running summary + recent N turns + user.
+    messages: list[dict] = [{"role": "system", "content": settings.system_prompt}]
 
-    `turns` is a flat list of {role, content} message dicts (2 per turn). Only
-    the most recent `recent_turns` turns are fed to the model; older history
-    lives in the running summary and Postgres.
-    """
-    recent = turns[-(2 * settings.recent_turns):] if settings.recent_turns else []
-    recent = [{"role": t["role"], "content": t["content"]} for t in recent]
-    summary_text = summary.get("text") if summary else None
-    return build_messages(settings.system_prompt, summary_text, recent, user_text)
+    if channel_summary_text:
+        messages.append(
+            {"role": "system", "content": f"Channel summary:\n{channel_summary_text}"}
+        )
+    if personal_memory_text:
+        messages.append(
+            {
+                "role": "system",
+                "content": f"About the current speaker:\n{personal_memory_text}",
+            }
+        )
+
+    for turn in window_turns:
+        messages.append({"role": turn["role"], "content": turn["content"]})
+
+    messages.append({"role": "user", "content": user_text})
+    return messages

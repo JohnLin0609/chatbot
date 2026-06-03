@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -13,11 +14,14 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # BigInteger doesn't autoincrement on SQLite (used in tests); fall back to
 # INTEGER there so primary keys auto-populate. Postgres keeps BIGINT/BIGSERIAL.
 BigIntPK = BigInteger().with_variant(Integer, "sqlite")
+# JSONB on Postgres, plain JSON on SQLite (tests).
+JsonDoc = JSONB().with_variant(JSON, "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -51,6 +55,8 @@ class Message(Base):
     __table_args__ = (
         CheckConstraint("role IN ('user', 'assistant')", name="ck_messages_role"),
         Index("ix_messages_session_created", "session_id", "created_at"),
+        # Supports load_messages_after(user_id, after_id) for fact extraction.
+        Index("ix_messages_user_id", "user_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
@@ -88,3 +94,22 @@ class Summary(Base):
     )
 
     session: Mapped[Session] = relationship(back_populates="summaries")
+
+
+class UserMemory(Base):
+    """Per-user durable memory document (tier-3), keyed platform:user_id."""
+
+    __tablename__ = "user_memory"
+
+    user_key: Mapped[str] = mapped_column(String, primary_key=True)
+    document: Mapped[dict] = mapped_column(JsonDoc, nullable=False)
+    # Cursor: highest message id already considered for fact extraction.
+    last_extracted_message_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

@@ -8,7 +8,7 @@ rows land atomically.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.persistence.models import Message, Session, Summary
+from core.persistence.models import Message, Session, Summary, UserMemory
 
 
 async def ensure_session(
@@ -93,3 +93,45 @@ async def get_latest_summary(db: AsyncSession, session_id: int) -> Summary | Non
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+# ----------------------------------------------------------- user memory (tier-3)
+async def get_user_memory(db: AsyncSession, user_key: str) -> UserMemory | None:
+    result = await db.execute(
+        select(UserMemory).where(UserMemory.user_key == user_key)
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_user_memory(
+    db: AsyncSession,
+    user_key: str,
+    document: dict,
+    last_extracted_message_id: int | None = None,
+) -> UserMemory:
+    row = await get_user_memory(db, user_key)
+    if row is None:
+        row = UserMemory(
+            user_key=user_key,
+            document=document,
+            last_extracted_message_id=last_extracted_message_id,
+        )
+        db.add(row)
+    else:
+        row.document = document
+        if last_extracted_message_id is not None:
+            row.last_extracted_message_id = last_extracted_message_id
+    await db.flush()
+    return row
+
+
+async def load_messages_after(
+    db: AsyncSession, user_id: str, after_id: int | None, limit: int = 200
+) -> list[Message]:
+    """A user's messages (across sessions) newer than `after_id`, oldest-first."""
+    stmt = select(Message).where(Message.user_id == user_id)
+    if after_id is not None:
+        stmt = stmt.where(Message.id > after_id)
+    stmt = stmt.order_by(Message.id).limit(limit)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())

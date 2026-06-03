@@ -22,11 +22,23 @@ DEFAULT_MODELS: dict[Provider, str] = {
 }
 
 
-DEFAULT_SUMMARY_PROMPT = (
+DEFAULT_CHANNEL_SUMMARY_PROMPT = (
     "You are a conversation summariser. Merge the existing summary with the new "
-    "turns into a single concise running summary. Preserve facts, decisions, open "
-    "questions, and user preferences. Use third-person bullet points. Do not invent "
-    "anything that was not in the conversation."
+    "turns into a SINGLE very concise running summary of at most 150 tokens. "
+    "Preserve facts, decisions, open questions, and preferences. Third-person "
+    "bullet points. Do not invent anything not in the conversation."
+)
+
+DEFAULT_FACT_PROMPT = (
+    "You maintain a durable per-user memory document. Given the user's current "
+    "memory and recent messages, decide what to update. Respond ONLY with JSON:\n"
+    '{"rolling_summary": "<=400-token third-person summary of this user across '
+    'sessions", "facts": [{"key": "snake_case", "value": "...", "cardinality": '
+    '"single|multi", "confidence": 0.0-1.0}], "retire": [{"key": "...", "reason": '
+    '"..."}]}\n'
+    "Use cardinality 'single' for facts with one value (new value replaces old), "
+    "'multi' for list-like facts (values accumulate). Only include facts that are "
+    "clearly stated or strongly implied. Do not invent. Omit unchanged facts."
 )
 
 
@@ -70,15 +82,31 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------- Postgres
     postgres_dsn: str = "postgresql+asyncpg://chat:chat@localhost:5434/chat"
 
-    # -------------------------------------------------------- Memory/context
-    recent_turns: int = 4  # how many recent turns to keep hot / feed the LLM
-    hot_ttl_seconds: int = 604800  # 7 days
+    # ------------------------------------------------------- Tokenisation
+    tiktoken_encoding: str = "o200k_base"
 
-    # ------------------------------------------------------------- Summary
-    summary_trigger_turns: int = 10
-    summary_trigger_tokens: int = 2000  # 0 disables the token threshold
-    summary_async: bool = False
-    summary_system_prompt: str = DEFAULT_SUMMARY_PROMPT
+    # ------------------------------------------------------ Memory/context
+    hot_ttl_seconds: int = 604800  # 7 days
+    # Tier-1: current-context window size (whole turns kept under this budget).
+    context_window_tokens: int = 3000
+
+    # ----------------------------------------------- Tier-2 channel summary
+    # Turns overflowing the window are folded into a short per-channel summary.
+    channel_summary_token_cap: int = 150
+    channel_summary_system_prompt: str = DEFAULT_CHANNEL_SUMMARY_PROMPT
+
+    # ------------------------------------------ Tier-3 per-user fact memory
+    # Trigger fact extraction once a user's un-extracted messages reach this.
+    fact_extraction_tokens: int = 6000
+    fact_extraction_async: bool = False
+    fact_system_prompt: str = DEFAULT_FACT_PROMPT
+    # Caps on the RENDERED (slimmed) memory injected into the prompt.
+    personal_memory_token_cap: int = 800
+    rolling_summary_token_cap: int = 400
+    # Ranking weights for which facts to inject when over the cap.
+    fact_confidence_weight: float = 1.0
+    fact_recency_weight: float = 1.0
+    fact_recency_halflife_days: float = 30.0
 
     # ------------------------------------------------------------- Gateway
     reply_timeout_seconds: float = 30.0  # how long /chat and the CLI wait for a reply

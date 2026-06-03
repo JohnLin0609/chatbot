@@ -2,9 +2,11 @@
 
 import fakeredis.aioredis
 import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from core.config import Provider, Settings
-from core.persistence.db import create_engine, create_sessionmaker
+from core.persistence.db import create_sessionmaker
 from core.persistence.models import Base
 
 
@@ -13,8 +15,9 @@ def make_settings(**kwargs) -> Settings:
         _env_file=None,
         provider=Provider.openai,
         openai_api_key="x",
-        recent_turns=2,
-        summary_trigger_turns=3,
+        # Small windows so tests trigger overflow/extraction quickly.
+        context_window_tokens=40,
+        fact_extraction_tokens=60,
     )
     base.update(kwargs)
     return Settings(**base)
@@ -49,7 +52,13 @@ async def redis():
 
 @pytest_asyncio.fixture
 async def sessionmaker():
-    engine = create_engine("sqlite+aiosqlite:///:memory:")
+    # StaticPool keeps a single shared connection so every session (including
+    # background-task sessions) sees the same in-memory database.
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield create_sessionmaker(engine)

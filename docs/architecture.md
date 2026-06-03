@@ -58,20 +58,43 @@ responsible for normalising platform ids into this key.
 
 ## Memory: hot + durable
 
-- **Redis hot store** (`core/memory/hot_store.py`): recent turns (LIST) and the
-  running summary (STRING) per session, TTL-refreshed on write. Fast path for
-  building context.
-- **PostgreSQL** (`core/persistence/`): durable full history — `sessions`,
-  `messages`, `summaries`. On a cold/expired hot store the pipeline backfills
-  recent context from Postgres.
+- **Redis hot store** (`core/memory/hot_store.py`): recent turns (LIST, each
+  `{role,content,ts,user_id}`) and the channel summary (STRING) per session,
+  plus a per-user memory mirror, TTL-refreshed on write.
+- **PostgreSQL** (`core/persistence/`): durable source of truth — `sessions`,
+  `messages`, `summaries`, and `user_memory` (per-user JSONB document + an
+  extraction cursor). On a cold/expired hot store the pipeline backfills from
+  Postgres.
 
-## Context strategy: summary + recent
+## Memory tiers (token-driven)
 
-Each turn the pipeline feeds the LLM: system prompt + running summary + the last
-`RECENT_TURNS` turns + the current message (`core/memory/context_builder.py`).
-When unsummarised turns reach `SUMMARY_TRIGGER_TURNS`, the summariser
-(`core/summary/summarizer.py`) folds the older turns into the running summary
-with one LLM call, keeps the last `RECENT_TURNS`, and persists the new summary.
+Sizing is by tiktoken tokens (`core/tokens/counter.py`), not turn counts. Two
+configurable water-levels drive everything:
+
+1. **Current context (tier-1)** — the most recent whole turns that fit under
+   `CONTEXT_WINDOW_TOKENS` (`core/memory/token_window.py`, never splits a turn).
+2. **Channel summary (tier-2, per channel)** — when turns overflow the window
+   they are folded into a short (~`CHANNEL_SUMMARY_TOKEN_CAP`) running summary
+   (`core/summary/summarizer.py::fold_overflow`).
+3. **User facts (tier-3, per user)** — a durable per-user document
+   (`core/facts/`): `rolling_summary` + structured `facts` (each with
+   cardinality/confidence/timestamps) + `superseded`. When a user's
+   un-extracted messages reach `FACT_EXTRACTION_TOKENS`, a separate LLM call
+   (`FactExtractor`) updates the document; `single` facts replace (old value →
+   `superseded`), `multi` facts accumulate, `retire` removes.
+
+**Identity**: tier-1/2 are keyed `platform:channel_id`; tier-3 is keyed
+`platform:user_id`. The pipeline injects the channel summary plus the *current
+speaker's* personal memory.
+
+**Injection slimming** (`core/facts/renderer.py`): facts are rendered to
+`key: value` (metadata dropped) and ranked by confidence × recency, filled up to
+`PERSONAL_MEMORY_TOKEN_CAP`; `last_used_at` is bumped for injected facts.
+
+**Invariant**: turns evicted from the window are folded into the channel summary
+but kept in Postgres `messages` until tier-3 consumes them — the per-user
+`last_extracted_message_id` cursor advances only after a successful extraction,
+so the mid-band (out of window, summarised, not yet extracted) is never lost.
 
 ## Pipeline (one turn)
 

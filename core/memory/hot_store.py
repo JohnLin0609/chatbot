@@ -40,22 +40,30 @@ class HotStore:
     async def exists(self, session_key: str) -> bool:
         return bool(await self._redis.exists(self._turns_key(session_key)))
 
+    # Coarse backstop against unbounded growth if overflow-folding ever lags.
+    # Normal trimming to the token window happens in the pipeline via
+    # replace_turns(); this is only a safety valve.
+    _MAX_MESSAGES = 1000
+
     # --------------------------------------------------------------- write
     async def append_turn(
-        self, session_key: str, user_text: str, assistant_text: str
+        self,
+        session_key: str,
+        user_text: str,
+        assistant_text: str,
+        user_id: str | None = None,
     ) -> None:
         key = self._turns_key(session_key)
         now = time.time()
-        user = json.dumps({"role": "user", "content": user_text, "ts": now})
+        user = json.dumps(
+            {"role": "user", "content": user_text, "ts": now, "user_id": user_id}
+        )
         assistant = json.dumps(
-            {"role": "assistant", "content": assistant_text, "ts": now}
+            {"role": "assistant", "content": assistant_text, "ts": now, "user_id": None}
         )
         pipe = self._redis.pipeline()
         pipe.rpush(key, user, assistant)
-        # Safety cap so a session never grows unbounded if summarisation lags:
-        # keep at most summary_trigger_turns turns (2 messages each).
-        cap = 2 * self._settings.summary_trigger_turns
-        pipe.ltrim(key, -cap, -1)
+        pipe.ltrim(key, -self._MAX_MESSAGES, -1)
         pipe.expire(key, self._settings.hot_ttl_seconds)
         await pipe.execute()
 

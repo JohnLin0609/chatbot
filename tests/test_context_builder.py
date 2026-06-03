@@ -4,33 +4,38 @@ from core.memory.context_builder import build_context
 from tests.conftest import make_settings
 
 
-def _turns(n):
-    out = []
-    for i in range(n):
-        out.append({"role": "user", "content": f"u{i}"})
-        out.append({"role": "assistant", "content": f"a{i}"})
-    return out
-
-
-def test_includes_system_and_user():
-    s = make_settings(recent_turns=2)
-    msgs = build_context(s, None, [], "hello")
+def test_minimal_system_and_user():
+    msgs = build_context(
+        make_settings(), channel_summary_text="", personal_memory_text="",
+        window_turns=[], user_text="hello",
+    )
     assert msgs[0]["role"] == "system"
     assert msgs[-1] == {"role": "user", "content": "hello"}
+    assert len(msgs) == 2
 
 
-def test_summary_added_as_second_system():
-    s = make_settings(recent_turns=2)
-    msgs = build_context(s, {"text": "running summary"}, [], "hi")
-    systems = [m for m in msgs if m["role"] == "system"]
-    assert len(systems) == 2
-    assert "running summary" in systems[1]["content"]
+def test_injects_channel_and_personal():
+    msgs = build_context(
+        make_settings(),
+        channel_summary_text="chan sum",
+        personal_memory_text="occupation: 後端工程師",
+        window_turns=[{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}],
+        user_text="now",
+    )
+    systems = [m["content"] for m in msgs if m["role"] == "system"]
+    assert any("Channel summary" in s and "chan sum" in s for s in systems)
+    assert any("current speaker" in s and "後端工程師" in s for s in systems)
+    # window turns present, current user last
+    contents = [m["content"] for m in msgs]
+    assert "a" in contents and "b" in contents
+    assert msgs[-1] == {"role": "user", "content": "now"}
 
 
-def test_only_recent_turns_fed():
-    s = make_settings(recent_turns=2)
-    msgs = build_context(s, None, _turns(5), "now")
-    # 1 system + 2 turns (4 messages) + current user
-    non_system = [m for m in msgs if m["role"] != "system"]
-    assert len(non_system) == 5  # 4 recent + current
-    assert non_system[0]["content"] == "u3"  # oldest kept is turn 3
+def test_omits_empty_blocks():
+    msgs = build_context(
+        make_settings(), channel_summary_text="", personal_memory_text="x: y",
+        window_turns=[], user_text="hi",
+    )
+    systems = [m["content"] for m in msgs if m["role"] == "system"]
+    assert not any("Channel summary" in s for s in systems)
+    assert any("current speaker" in s for s in systems)

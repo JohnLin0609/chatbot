@@ -1,8 +1,7 @@
-"""Summarizer trigger + folding tests."""
+"""Summarizer fold_overflow tests."""
 
-from core.memory.hot_store import HotStore
 from core.summary.summarizer import Summarizer
-from tests.conftest import FakeChat
+from tests.conftest import FakeChat, make_settings
 
 
 def _turns(n):
@@ -13,34 +12,22 @@ def _turns(n):
     return out
 
 
-async def test_no_summary_below_threshold(settings, redis):
-    hot = HotStore(redis, settings)
-    summ = Summarizer(settings, FakeChat("S"), hot)
-    # threshold is 3 turns; provide 2
-    result = await summ.maybe_summarize("cli:c1", None, _turns(2))
-    assert result is None
+async def test_no_overflow_returns_none():
+    summ = Summarizer(make_settings(), FakeChat("S"))
+    assert await summ.fold_overflow("cli:c1", None, []) is None
 
 
-async def test_summarizes_over_threshold(settings, redis):
-    hot = HotStore(redis, settings)
-    chat = FakeChat("running summary")
-    summ = Summarizer(settings, chat, hot)
-    turns = _turns(3)  # == trigger
-    result = await summ.maybe_summarize("cli:c1", None, turns)
-
-    assert result is not None
-    assert result["text"] == "running summary"
-    # recent_turns=2 kept, so 1 turn folded -> turn_count 1
-    assert result["turn_count"] == 1
-    # hot store now holds only the kept recent turns
-    _s, kept = await hot.load("cli:c1")
-    assert len(kept) == 2 * settings.recent_turns
+async def test_folds_overflow_into_summary():
+    summ = Summarizer(make_settings(), FakeChat("channel summary"))
+    result = await summ.fold_overflow("cli:c1", None, _turns(2), covers_through_message_id=42)
+    assert result["text"] == "channel summary"
+    assert result["turn_count"] == 2
+    assert result["covers_through_message_id"] == 42
 
 
-async def test_existing_summary_count_accumulates(settings, redis):
-    hot = HotStore(redis, settings)
-    summ = Summarizer(settings, FakeChat("merged"), hot)
-    result = await summ.maybe_summarize(
+async def test_turn_count_accumulates():
+    summ = Summarizer(make_settings(), FakeChat("merged"))
+    result = await summ.fold_overflow(
         "cli:c1", {"text": "old", "turn_count": 5}, _turns(3)
     )
-    assert result["turn_count"] == 6  # 5 + 1 folded
+    assert result["turn_count"] == 8  # 5 + 3 folded

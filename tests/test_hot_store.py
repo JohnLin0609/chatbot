@@ -5,21 +5,23 @@ from core.memory.hot_store import HotStore
 
 async def test_append_and_load(settings, redis):
     hot = HotStore(redis, settings)
-    await hot.append_turn("cli:c1", "hello", "hi there")
+    await hot.append_turn("cli:c1", "hello", "hi there", user_id="u1")
 
     summary, turns = await hot.load("cli:c1")
     assert summary is None
     assert [t["role"] for t in turns] == ["user", "assistant"]
     assert turns[0]["content"] == "hello"
+    assert turns[0]["user_id"] == "u1"
+    assert turns[1]["user_id"] is None  # assistant has no author
 
 
-async def test_turns_capped_at_trigger(settings, redis):
-    # cap = 2 * summary_trigger_turns messages
+async def test_backstop_caps_messages(settings, redis):
     hot = HotStore(redis, settings)
+    hot._MAX_MESSAGES = 6  # shrink the safety valve for the test
     for i in range(10):
-        await hot.append_turn("cli:c1", f"u{i}", f"a{i}")
+        await hot.append_turn("cli:c1", f"u{i}", f"a{i}", user_id="u1")
     _summary, turns = await hot.load("cli:c1")
-    assert len(turns) == 2 * settings.summary_trigger_turns
+    assert len(turns) == 6
 
 
 async def test_ttl_set(settings, redis):

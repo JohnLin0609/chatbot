@@ -75,9 +75,12 @@ curl -X POST localhost:8753/chat \
   -d '{"session_id":"line:c1","message":"我叫什麼？"}'   # 應答出「小明」(memory)
 ```
 
-`session_id` is the conversation key (`platform:channel_id`). Memory is shared
-per channel. After more than `SUMMARY_TRIGGER_TURNS` turns the core folds older
-turns into a running summary (check the `summaries` table).
+`session_id` is the conversation key (`platform:channel_id`). The core keeps
+three token-driven memory tiers: a recent-context window, a short per-channel
+running summary (folded from window overflow), and a durable **per-user fact
+document** (`user_memory` table — facts + a cross-session rolling summary,
+extracted by a separate LLM pass once a user accumulates enough new messages).
+See [docs/architecture.md](docs/architecture.md#memory-tiers-token-driven).
 
 ## Configuration
 
@@ -90,9 +93,11 @@ provider is required.
 | `MODEL`                 | per-provider default                               | Model name (empty = default)      |
 | `REDIS_URL`             | `redis://localhost:6380/0`                         | Redis (streams + hot store)       |
 | `POSTGRES_DSN`          | `postgresql+asyncpg://chat:chat@localhost:5434/chat` | Durable history                 |
-| `RECENT_TURNS`          | `4`                                                | Recent turns fed to the LLM       |
+| `CONTEXT_WINDOW_TOKENS` | `3000`                                             | Tier-1 recent-context window      |
+| `CHANNEL_SUMMARY_TOKEN_CAP` | `150`                                          | Tier-2 channel summary size       |
+| `FACT_EXTRACTION_TOKENS`| `6000`                                             | Tier-3 fact-extraction water-level|
+| `PERSONAL_MEMORY_TOKEN_CAP` | `800`                                          | Injected per-user memory cap      |
 | `HOT_TTL_SECONDS`       | `604800`                                           | Hot-store TTL (7 days)            |
-| `SUMMARY_TRIGGER_TURNS` | `10`                                               | Turns before summarising          |
 | `REPLY_TIMEOUT_SECONDS` | `30`                                               | Gateway wait for a reply          |
 
 ## Tests

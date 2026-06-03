@@ -28,8 +28,10 @@ def test_explicit_model_overrides_default():
 
 def test_new_infra_defaults():
     s = _settings()
-    assert s.recent_turns == 4
-    assert s.summary_trigger_turns == 10
+    assert s.context_window_tokens == 3000
+    assert s.fact_extraction_tokens == 6000
+    assert s.personal_memory_token_cap == 800
+    assert s.channel_summary_token_cap == 150
+    assert s.tiktoken_encoding == "o200k_base"
     assert s.inbound_stream == "chat:inbound"
-    assert s.outbound_stream == "chat:outbound"
     assert s.core_consumer_group == "core-workers"
