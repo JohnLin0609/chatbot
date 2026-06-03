@@ -5,3 +5,7 @@ anthropic
 openai
 google-genai
 ollama
+redis
+sqlalchemy
+asyncpg
+alembic

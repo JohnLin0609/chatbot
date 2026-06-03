@@ -1,0 +1,90 @@
+"""SQLAlchemy ORM models for durable conversation history."""
+
+from datetime import datetime
+
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# BigInteger doesn't autoincrement on SQLite (used in tests); fall back to
+# INTEGER there so primary keys auto-populate. Postgres keeps BIGINT/BIGSERIAL.
+BigIntPK = BigInteger().with_variant(Integer, "sqlite")
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    session_key: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String, nullable=False)
+    channel_id: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_active_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+    summaries: Mapped[list["Summary"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_messages_role"),
+        Index("ix_messages_session_created", "session_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("sessions.id"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    platform_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    session: Mapped[Session] = relationship(back_populates="messages")
+
+
+class Summary(Base):
+    __tablename__ = "summaries"
+    __table_args__ = (
+        Index("ix_summaries_session_created", "session_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("sessions.id"), nullable=False
+    )
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    covers_through_message_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("messages.id"), nullable=True
+    )
+    turn_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    session: Mapped[Session] = relationship(back_populates="summaries")

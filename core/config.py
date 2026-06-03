@@ -22,9 +22,18 @@ DEFAULT_MODELS: dict[Provider, str] = {
 }
 
 
+DEFAULT_SUMMARY_PROMPT = (
+    "You are a conversation summariser. Merge the existing summary with the new "
+    "turns into a single concise running summary. Preserve facts, decisions, open "
+    "questions, and user preferences. Use third-person bullet points. Do not invent "
+    "anything that was not in the conversation."
+)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # ------------------------------------------------------------------ LLM
     # Which LLM backend to talk to.
     provider: Provider = Provider.anthropic
 
@@ -45,6 +54,31 @@ class Settings(BaseSettings):
         "Answer in the same language the user writes in."
     )
     max_tokens: int = 1024
+
+    # ---------------------------------------------------------------- Redis
+    redis_url: str = "redis://localhost:6379/0"
+    redis_key_prefix: str = "chat"
+    inbound_stream: str = "chat:inbound"
+    outbound_stream: str = "chat:outbound"
+    core_consumer_group: str = "core-workers"
+    http_consumer_group: str = "http-gateway"
+    cli_consumer_group: str = "cli-gateway"
+
+    # ------------------------------------------------------------- Postgres
+    postgres_dsn: str = "postgresql+asyncpg://chat:chat@localhost:5432/chat"
+
+    # -------------------------------------------------------- Memory/context
+    recent_turns: int = 4  # how many recent turns to keep hot / feed the LLM
+    hot_ttl_seconds: int = 604800  # 7 days
+
+    # ------------------------------------------------------------- Summary
+    summary_trigger_turns: int = 10
+    summary_trigger_tokens: int = 2000  # 0 disables the token threshold
+    summary_async: bool = False
+    summary_system_prompt: str = DEFAULT_SUMMARY_PROMPT
+
+    # ------------------------------------------------------------- Gateway
+    reply_timeout_seconds: float = 30.0  # how long /chat and the CLI wait for a reply
 
     @property
     def model_name(self) -> str:

@@ -1,6 +1,6 @@
 """Settings / provider-resolution tests."""
 
-from app.config import DEFAULT_MODELS, Provider, Settings
+from core.config import DEFAULT_MODELS, Provider, Settings
 
 
 def _settings(**kwargs) -> Settings:
@@ -24,3 +24,12 @@ def test_model_name_falls_back_to_provider_default():
 def test_explicit_model_overrides_default():
     s = _settings(provider="openai", model="gpt-5.4-mini")
     assert s.model_name == "gpt-5.4-mini"
+
+
+def test_new_infra_defaults():
+    s = _settings()
+    assert s.recent_turns == 4
+    assert s.summary_trigger_turns == 10
+    assert s.inbound_stream == "chat:inbound"
+    assert s.outbound_stream == "chat:outbound"
+    assert s.core_consumer_group == "core-workers"

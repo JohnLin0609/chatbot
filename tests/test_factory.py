@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.chat_service import (
+from core.llm import (
     AnthropicChatService,
     ChatServiceError,
     GeminiChatService,
@@ -10,7 +10,7 @@ from app.chat_service import (
     OpenAIChatService,
     build_chat_service,
 )
-from app.config import Provider, Settings
+from core.config import Provider, Settings
 
 
 def _settings(**kwargs) -> Settings:

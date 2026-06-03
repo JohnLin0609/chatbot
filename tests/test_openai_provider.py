@@ -5,12 +5,19 @@ from unittest.mock import MagicMock
 import openai
 import pytest
 
-from app.chat_service import ChatServiceError, OpenAIChatService
-from app.config import Provider, Settings
+from core.config import Provider, Settings
+from core.llm import OpenAIChatService
+from core.llm.base import ChatServiceError
 
 
 def _settings(**kwargs) -> Settings:
     return Settings(_env_file=None, provider=Provider.openai, openai_api_key="x", **kwargs)
+
+
+MESSAGES = [
+    {"role": "system", "content": "you are helpful"},
+    {"role": "user", "content": "hi there"},
+]
 
 
 class _FakeMessage:
@@ -42,19 +49,19 @@ def captured_create(monkeypatch):
 
 async def test_returns_assistant_text(captured_create):
     svc = OpenAIChatService(_settings(model="gpt-5.4-mini"))
-    reply = await svc.generate_reply("s1", "hi there")
+    reply = await svc.generate_reply("s1", MESSAGES)
     assert reply == "hello from openai"
 
 
-async def test_sends_model_and_system_then_user(captured_create):
+async def test_passes_model_and_message_list(captured_create):
     svc = OpenAIChatService(_settings(model="gpt-5.4-mini"))
-    await svc.generate_reply("s1", "hi there")
+    await svc.generate_reply("s1", MESSAGES)
 
     assert captured_create["model"] == "gpt-5.4-mini"
+    # GPT-5 series requires max_completion_tokens, not max_tokens.
     assert captured_create["max_completion_tokens"] == 1024
-    roles = [m["role"] for m in captured_create["messages"]]
-    assert roles == ["system", "user"]
-    assert captured_create["messages"][-1]["content"] == "hi there"
+    assert "max_tokens" not in captured_create
+    assert captured_create["messages"] == MESSAGES
 
 
 async def test_sdk_error_becomes_chat_service_error(monkeypatch):
@@ -67,4 +74,4 @@ async def test_sdk_error_becomes_chat_service_error(monkeypatch):
 
     svc = OpenAIChatService(_settings())
     with pytest.raises(ChatServiceError):
-        await svc.generate_reply("s1", "hi")
+        await svc.generate_reply("s1", MESSAGES)
