@@ -137,6 +137,15 @@ class Settings(BaseSettings):
     enable_tools: bool = True
     tool_max_iterations: int = 4
 
+    # ------------------------------------------------- Web search (Brave API)
+    # The web_search tool is registered ONLY when an API key is present.
+    brave_api_key: str = ""
+    brave_search_url: str = "https://api.search.brave.com/res/v1/web/search"
+    brave_search_count: int = 5  # default result count when the model omits it
+    brave_search_country: str = ""  # optional ISO country (e.g. "us"); "" = Brave default
+    brave_search_lang: str = ""  # optional UI/search language (e.g. "en"); "" = Brave default
+    brave_search_timeout: float = 8.0
+
     @property
     def model_name(self) -> str:
         """Resolved model: explicit MODEL, else the provider default."""

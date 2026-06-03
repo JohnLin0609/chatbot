@@ -11,3 +11,4 @@ asyncpg
 alembic
 tiktoken
 qdrant-client
+httpx

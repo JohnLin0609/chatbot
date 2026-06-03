@@ -100,6 +100,13 @@ their decorators run, then registers them. `core/rag/search_tool.py` is the
 reference example. The OpenAI provider already supports the tool loop; nothing
 else needs changing.
 
+To gate a tool on configuration (e.g. an API key), add a predicate:
+`@tool(..., requires=lambda s: bool(s.brave_api_key))` — the tool is registered
+only when it returns truthy, so the model never sees a tool it can't use.
+`core/web/search_tool.py` (Brave `web_search`) is the reference example; its
+`BraveSearchService` is built in `runtime.py` and injected via `ToolContext`
+(the same pattern as `embedding_service` / `vector_store`).
+
 ### Add an LLM provider
 Subclass `ChatService` (`core/llm/base.py`), implement `generate_reply`; to
 support tools also set `supports_tools = True` and implement `complete(messages,

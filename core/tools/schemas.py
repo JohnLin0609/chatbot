@@ -8,6 +8,7 @@ if TYPE_CHECKING:  # avoid import cycles; these are only type hints
     from core.config import Settings
     from core.rag.embeddings import EmbeddingService
     from core.rag.vector_store import QdrantVectorStore
+    from core.web.brave import BraveSearchService
 
 
 @dataclass
@@ -20,6 +21,8 @@ class ToolContext:
     session_id: str
     user_key: str
     channel_id: str
+    # Present only when a Brave API key is configured (see web_search tool).
+    web_search_service: "BraveSearchService | None" = None
 
 
 # A handler takes (parsed arguments, context) and returns text for the LLM.
@@ -32,6 +35,9 @@ class Tool:
     description: str
     parameters: dict  # JSON Schema for the function arguments
     handler: ToolHandler
+    # Optional registration gate: register this tool only when requires(settings)
+    # is truthy (e.g. an API key is present). None = always available.
+    requires: Callable[["Settings"], bool] | None = field(default=None, compare=False)
 
     def to_openai(self) -> dict:
         return {

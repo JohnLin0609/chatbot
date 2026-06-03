@@ -30,6 +30,7 @@ from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
 from core.tools.loop import ToolRunner
 from core.tools.schemas import ToolContext
+from core.web.brave import BraveSearchService
 from shared.events import InboundEvent, OutboundEvent
 
 
@@ -46,6 +47,7 @@ class PipelineDeps:
     tool_runner: ToolRunner
     embedding_service: EmbeddingService
     vector_store: QdrantVectorStore
+    web_search_service: BraveSearchService | None = None
 
 
 def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
@@ -119,6 +121,7 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             session_id=session_key,
             user_key=user_key,
             channel_id=inbound.channel_id,
+            web_search_service=deps.web_search_service,
         )
         try:
             reply = await deps.tool_runner.run(session_key, messages, tool_ctx)

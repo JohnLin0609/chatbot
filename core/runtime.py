@@ -15,6 +15,7 @@ from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
 from core.tools.loop import ToolRunner
 from core.tools.registry import ToolRegistry, register_default_tools
+from core.web.brave import build_web_search_service
 
 
 def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
@@ -31,8 +32,9 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
     vector_store = QdrantVectorStore(
         settings.qdrant_url, settings.qdrant_collection, settings.embedding_dim
     )
+    web_search_service = build_web_search_service(settings)
     registry = ToolRegistry()
-    register_default_tools(registry)
+    register_default_tools(registry, settings)
     tool_runner = ToolRunner(chat_service, registry, settings)
 
     return PipelineDeps(
@@ -47,4 +49,5 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
         tool_runner=tool_runner,
         embedding_service=embedding_service,
         vector_store=vector_store,
+        web_search_service=web_search_service,
     )

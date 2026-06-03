@@ -41,6 +41,7 @@ Copy `.env.example` to `.env` and set at least:
 | `POSTGRES_DSN` | yes | e.g. `postgresql+asyncpg://chat:chat@localhost:5434/chat` |
 | `QDRANT_URL` | yes (for RAG) | e.g. `http://localhost:6333` |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIM` | optional | must stay fixed for a given Qdrant collection |
+| `BRAVE_API_KEY` | optional | enables the `web_search` tool (unset = tool disabled) |
 
 **Never commit `.env`** (it's gitignored). Change the Postgres credentials from
 the `chat:chat` default for anything beyond local use.

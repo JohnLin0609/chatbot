@@ -70,5 +70,5 @@ def test_registered_as_default_tool():
     from core.tools.registry import ToolRegistry, register_default_tools
 
     reg = ToolRegistry()
-    register_default_tools(reg)
+    register_default_tools(reg, make_settings())
     assert reg.get("search_knowledge") is not None

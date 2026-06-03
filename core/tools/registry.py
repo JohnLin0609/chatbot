@@ -5,18 +5,40 @@ module-level factory list. runtime calls register_default_tools(registry) to
 instantiate them into a ToolRegistry. Tools can also be registered explicitly.
 """
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
 from core.tools.schemas import Tool, ToolHandler
+
+if TYPE_CHECKING:
+    from core.config import Settings
 
 # Factories registered via @tool, instantiated by register_default_tools().
 _DEFAULT_TOOL_FACTORIES: list[Tool] = []
 
 
-def tool(*, name: str, description: str, parameters: dict):
-    """Decorator: register an async handler as a default tool."""
+def tool(
+    *,
+    name: str,
+    description: str,
+    parameters: dict,
+    requires: "Callable[[Settings], bool] | None" = None,
+):
+    """Decorator: register an async handler as a default tool.
+
+    `requires` is an optional gate: the tool is registered only when
+    requires(settings) is truthy (e.g. a needed API key is set).
+    """
 
     def decorator(handler: ToolHandler) -> ToolHandler:
         _DEFAULT_TOOL_FACTORIES.append(
-            Tool(name=name, description=description, parameters=parameters, handler=handler)
+            Tool(
+                name=name,
+                description=description,
+                parameters=parameters,
+                handler=handler,
+                requires=requires,
+            )
         )
         return handler
 
@@ -42,11 +64,14 @@ class ToolRegistry:
         return [t.to_openai() for t in self._tools.values()]
 
 
-def register_default_tools(registry: ToolRegistry) -> None:
-    """Register every @tool-decorated tool into the given registry."""
+def register_default_tools(registry: ToolRegistry, settings: "Settings") -> None:
+    """Register every @tool-decorated tool whose `requires` gate passes."""
     # Import for side effects so the decorators run and populate the factory list.
     import core.rag.search_tool  # noqa: F401
+    import core.web.search_tool  # noqa: F401
 
     for tool_obj in _DEFAULT_TOOL_FACTORIES:
+        if tool_obj.requires is not None and not tool_obj.requires(settings):
+            continue
         if registry.get(tool_obj.name) is None:
             registry.register(tool_obj)
