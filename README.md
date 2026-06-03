@@ -44,9 +44,14 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 
 cp .env.example .env          # set the API key for your chosen PROVIDER
-docker compose up -d          # redis + postgres
+docker compose up -d          # redis + postgres (this project's own)
 alembic upgrade head          # create tables
 ```
+
+This project's Redis and Postgres run on **dedicated host ports 6380 and 5434**
+(not the conventional 6379/5432) so they never collide with another Redis or
+Postgres already running on your machine. The app's defaults point at these
+ports.
 
 ## Run
 
@@ -83,8 +88,8 @@ provider is required.
 | ----------------------- | -------------------------------------------------- | --------------------------------- |
 | `PROVIDER`              | `anthropic`                                        | `anthropic`/`openai`/`gemini`/`ollama` |
 | `MODEL`                 | per-provider default                               | Model name (empty = default)      |
-| `REDIS_URL`             | `redis://localhost:6379/0`                         | Redis (streams + hot store)       |
-| `POSTGRES_DSN`          | `postgresql+asyncpg://chat:chat@localhost:5432/chat` | Durable history                 |
+| `REDIS_URL`             | `redis://localhost:6380/0`                         | Redis (streams + hot store)       |
+| `POSTGRES_DSN`          | `postgresql+asyncpg://chat:chat@localhost:5434/chat` | Durable history                 |
 | `RECENT_TURNS`          | `4`                                                | Recent turns fed to the LLM       |
 | `HOT_TTL_SECONDS`       | `604800`                                           | Hot-store TTL (7 days)            |
 | `SUMMARY_TRIGGER_TURNS` | `10`                                               | Turns before summarising          |

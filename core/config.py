@@ -56,7 +56,10 @@ class Settings(BaseSettings):
     max_tokens: int = 1024
 
     # ---------------------------------------------------------------- Redis
-    redis_url: str = "redis://localhost:6379/0"
+    # Defaults match docker-compose's dedicated host ports (6380/5433) so the
+    # app talks to this project's own Redis/Postgres, not whatever else may be
+    # running on the conventional 6379/5432.
+    redis_url: str = "redis://localhost:6380/0"
     redis_key_prefix: str = "chat"
     inbound_stream: str = "chat:inbound"
     outbound_stream: str = "chat:outbound"
@@ -65,7 +68,7 @@ class Settings(BaseSettings):
     cli_consumer_group: str = "cli-gateway"
 
     # ------------------------------------------------------------- Postgres
-    postgres_dsn: str = "postgresql+asyncpg://chat:chat@localhost:5432/chat"
+    postgres_dsn: str = "postgresql+asyncpg://chat:chat@localhost:5434/chat"
 
     # -------------------------------------------------------- Memory/context
     recent_turns: int = 4  # how many recent turns to keep hot / feed the LLM
