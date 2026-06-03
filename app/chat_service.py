@@ -88,7 +88,9 @@ class OpenAIChatService(ChatService):
         try:
             response = await self._client.chat.completions.create(
                 model=self._settings.model_name,
-                max_tokens=self._settings.max_tokens,
+                # Newer OpenAI models (GPT-5 / o-series) require
+                # max_completion_tokens; max_tokens is rejected.
+                max_completion_tokens=self._settings.max_tokens,
                 messages=messages,
             )
         except OpenAIError as exc:

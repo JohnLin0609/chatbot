@@ -51,7 +51,7 @@ async def test_sends_model_and_system_then_user(captured_create):
     await svc.generate_reply("s1", "hi there")
 
     assert captured_create["model"] == "gpt-5.4-mini"
-    assert captured_create["max_tokens"] == 1024
+    assert captured_create["max_completion_tokens"] == 1024
     roles = [m["role"] for m in captured_create["messages"]]
     assert roles == ["system", "user"]
     assert captured_create["messages"][-1]["content"] == "hi there"
