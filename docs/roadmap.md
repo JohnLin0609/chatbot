@@ -3,18 +3,23 @@
 Planned-but-unbuilt work, with the extension point that already exists for each
 (most of the scaffolding is in place by design).
 
-## Front-end adapters (next major phase)
+## Front-end adapters
 
-- **Line adapter** — a webhook FastAPI process: receive Line events, normalise to
-  an `InboundEvent`, publish to `chat:inbound`; consume `chat:outbound` and send
-  via Line reply/push API.
-- **Discord adapter** — a `discord.py` gateway bot (persistent WebSocket):
-  publish inbound, consume outbound, send to the channel.
+- **Discord adapter** — ✅ **built** (`interfaces/discord_app.py`): a `discord.py`
+  gateway bot. Replies on @mention (guild) / every DM; per-message `OutboundWaiter`
+  await with a typing indicator; live status as a self-cleaning reaction
+  (👀→🧠→tool emoji→✅) driven by the worker's pub/sub progress channel.
+- **Line adapter** — not built yet: a webhook FastAPI process — receive Line
+  events, normalise to an `InboundEvent`, publish to `chat:inbound`; consume
+  `chat:outbound` and send via Line reply/push API. (Note: Line is request/reply
+  over HTTP, so it can reuse the `OutboundWaiter` pattern like the HTTP gateway,
+  or push asynchronously.)
 
 Ready: the event contract (`shared/events.py` — `InboundEvent`/`OutboundEvent`
 with `platform`/`channel_id`/`user_id`/`correlation_id`/`reply_token`) and the
 identity model (per-channel memory, per-user facts) already support groups. Each
-adapter uses its own outbound consumer group. The core needs no changes.
+adapter uses its own outbound consumer group. The core needs no changes. The
+Discord adapter is the reference for a new platform.
 
 ## Tier-4 RAG growth
 

@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     core_consumer_group: str = "core-workers"
     http_consumer_group: str = "http-gateway"
     cli_consumer_group: str = "cli-gateway"
+    discord_consumer_group: str = "discord-gateway"
+    # Ephemeral progress (pub/sub): the worker broadcasts thinking/tool status so
+    # adapters can show live indicators (e.g. Discord reactions).
+    progress_channel: str = "chat:progress"
 
     # ------------------------------------------------------------- Postgres
     postgres_dsn: str = "postgresql+asyncpg://chat:chat@localhost:5434/chat"
@@ -145,6 +149,11 @@ class Settings(BaseSettings):
     brave_search_country: str = ""  # optional ISO country (e.g. "us"); "" = Brave default
     brave_search_lang: str = ""  # optional UI/search language (e.g. "en"); "" = Brave default
     brave_search_timeout: float = 8.0
+
+    # ------------------------------------------------------------- Discord
+    discord_bot_token: str = ""
+    # Optional noise guard: CSV of guild IDs the bot will answer in ("" = all).
+    discord_allowed_guilds: str = ""
 
     @property
     def model_name(self) -> str:

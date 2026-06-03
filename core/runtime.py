@@ -16,6 +16,7 @@ from core.tokens.counter import TokenCounter
 from core.tools.loop import ToolRunner
 from core.tools.registry import ToolRegistry, register_default_tools
 from core.web.brave import build_web_search_service
+from shared.progress import RedisProgressEmitter
 
 
 def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
@@ -50,4 +51,5 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
         embedding_service=embedding_service,
         vector_store=vector_store,
         web_search_service=web_search_service,
+        progress_emitter=RedisProgressEmitter(redis, settings),
     )

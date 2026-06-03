@@ -12,3 +12,4 @@ alembic
 tiktoken
 qdrant-client
 httpx
+discord.py

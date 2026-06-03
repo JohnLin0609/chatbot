@@ -9,6 +9,7 @@ if TYPE_CHECKING:  # avoid import cycles; these are only type hints
     from core.rag.embeddings import EmbeddingService
     from core.rag.vector_store import QdrantVectorStore
     from core.web.brave import BraveSearchService
+    from shared.progress import ProgressEmitter
 
 
 @dataclass
@@ -23,6 +24,9 @@ class ToolContext:
     channel_id: str
     # Present only when a Brave API key is configured (see web_search tool).
     web_search_service: "BraveSearchService | None" = None
+    # Optional live-progress plumbing (used by the tool loop to broadcast status).
+    correlation_id: str = ""
+    progress: "ProgressEmitter | None" = None
 
 
 # A handler takes (parsed arguments, context) and returns text for the LLM.

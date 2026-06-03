@@ -82,6 +82,34 @@ settled choices. Each entry: the decision, and the reasoning.
   assistant message verbatim (`model_dump`) so the tool-call message stack stays
   valid (mismatched `tool_call_id`s would 400).
 
+## Adapters & live progress
+
+- **Discord = persistent gateway bot, per-message await.** `interfaces/discord_app.py`
+  reuses `OutboundWaiter` (the HTTP/CLI correlation helper): on a message it
+  registers a `correlation_id`, publishes inbound, and awaits the matching
+  outbound while showing a typing indicator. Simple, ordered, good UX. Trade-off:
+  a reply in flight during a bot restart is lost (acceptable for chat). It runs as
+  a single instance with its own `discord-gateway` consumer group.
+- **Trigger: @mention in guilds, every DM.** Keeps the bot quiet in busy servers
+  and requires the privileged **Message Content Intent**. Bots/self are ignored
+  (loop prevention). Optional guild allowlist (`DISCORD_ALLOWED_GUILDS`).
+- **Progress over a separate pub/sub channel, not the outbound stream.** Tool
+  calls happen inside the worker, so the adapter can't know when (e.g.)
+  `web_search` runs. The worker broadcasts `thinking`/`tool_start`/`tool_end`
+  `ProgressEvent`s on a Redis **pub/sub** channel (`PROGRESS_CHANNEL`).
+  Pub/sub (not a durable stream) is deliberate: progress is *ephemeral and
+  best-effort* — a dropped message just means a momentarily stale indicator, while
+  the authoritative reply still arrives on the durable outbound stream. The
+  emitter is optional/no-op everywhere except the live worker, so the non-Discord
+  paths and unit tests are unchanged (same low-impact pattern as the web_search
+  `ToolContext` field).
+- **Reaction status UX = single self-cleaning phase emoji.** The bot reacts to the
+  user's own message with exactly one current-phase emoji that advances
+  (👀 received → 🧠 thinking → per-tool emoji like 🌐 `web_search` → ✅ done / ❌
+  error). Each transition removes the previous reaction and adds the new one, so a
+  finished message shows only ✅. Per-tool emojis come from a map, so a new tool
+  gets its own reaction (default 🛠️) with no adapter change.
+
 ## Infrastructure
 
 - **Dedicated host ports** (Redis 6380, Postgres 5434) because the dev machine

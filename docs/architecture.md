@@ -7,8 +7,8 @@ Two logical layers in separate processes:
 - **Core** (`core/`, run via `interfaces/worker.py`) — platform-agnostic. Owns
   conversation behaviour: session management, memory, summarisation, and the LLM
   call. Knows nothing about Line/Discord/HTTP.
-- **Adapters** (`interfaces/`) — front-end connectors. HTTP gateway and CLI
-  exist today; Line and Discord come later. Each adapter normalises a platform
+- **Adapters** (`interfaces/`) — front-end connectors. HTTP gateway, CLI, and
+  Discord exist today; Line comes later. Each adapter normalises a platform
   message into an `InboundEvent` and sends platform replies from `OutboundEvent`s.
 
 They never call each other directly. They exchange events over **Redis
@@ -147,7 +147,8 @@ added later without schema/tool changes.
 ## Deferred (next phases)
 
 - Line adapter (webhook FastAPI → inbound; outbound via reply/push API).
-- Discord adapter (discord.py gateway bot → inbound; outbound to channel).
+  (Discord — discord.py gateway bot with reaction status UX — is **built**:
+  `interfaces/discord_app.py`.)
 - Auto-distilled conversation experiences into the vector store; per-user
   conversation RAG; `get_member_memory` group tool; multi-provider tool support.
 - Dedupe hardening, streaming replies, auth, rate limiting.

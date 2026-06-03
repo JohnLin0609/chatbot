@@ -32,6 +32,7 @@ python -m interfaces.worker                   # core consumer: inbound stream ->
 uvicorn interfaces.http_app:app --port 8753   # chat gateway: POST /chat (async, waits for reply)
 uvicorn interfaces.admin_app:app --port 8754  # admin: POST /ingest (curated knowledge)
 python -m interfaces.cli --session line:c1    # optional: fake adapter driving the streams
+python -m interfaces.discord_app              # Discord bot (needs DISCORD_BOT_TOKEN)
 ```
 
 The worker and admin app call `ensure_collection()` on Qdrant at startup.
@@ -51,6 +52,20 @@ curl -X POST localhost:8753/chat -H 'Content-Type: application/json' \
 ```
 
 The worker logs `tool call: search_knowledge ...` when the model uses RAG.
+
+### Discord adapter
+
+1. Create an application + bot at the Discord Developer Portal; copy the bot token
+   to `DISCORD_BOT_TOKEN` in `.env`.
+2. Under **Bot → Privileged Gateway Intents**, enable **Message Content Intent**
+   (required to read message text for the @mention/DM trigger).
+3. Invite the bot with the `bot` scope and permissions to read/send messages and
+   add reactions.
+4. Run `python -m interfaces.discord_app` alongside the worker. @mention the bot
+   in a channel, or DM it. Status shows as a self-cleaning reaction on your
+   message (👀→🧠→tool emoji→✅); per-tool reactions (e.g. 🌐 for `web_search`)
+   are driven live by the worker's pub/sub progress channel (`PROGRESS_CHANNEL`).
+   Optionally restrict to specific servers via `DISCORD_ALLOWED_GUILDS` (CSV).
 
 ## Tests
 

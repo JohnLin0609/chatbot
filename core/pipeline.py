@@ -32,6 +32,7 @@ from core.tools.loop import ToolRunner
 from core.tools.schemas import ToolContext
 from core.web.brave import BraveSearchService
 from shared.events import InboundEvent, OutboundEvent
+from shared.progress import ProgressEmitter
 
 
 @dataclass
@@ -48,6 +49,7 @@ class PipelineDeps:
     embedding_service: EmbeddingService
     vector_store: QdrantVectorStore
     web_search_service: BraveSearchService | None = None
+    progress_emitter: ProgressEmitter | None = None
 
 
 def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
@@ -122,6 +124,8 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             user_key=user_key,
             channel_id=inbound.channel_id,
             web_search_service=deps.web_search_service,
+            correlation_id=inbound.correlation_id,
+            progress=deps.progress_emitter,
         )
         try:
             reply = await deps.tool_runner.run(session_key, messages, tool_ctx)

@@ -26,9 +26,18 @@ class ScriptedChat:
         return "plain reply"
 
 
-def _ctx():
+def _ctx(progress=None, correlation_id="cid1"):
     return ToolContext(settings=make_settings(), embedding_service=None,
-                       vector_store=None, session_id="s1", user_key="u", channel_id="c")
+                       vector_store=None, session_id="s1", user_key="u", channel_id="c",
+                       correlation_id=correlation_id, progress=progress)
+
+
+class FakeProgressEmitter:
+    def __init__(self):
+        self.events = []  # list of (correlation_id, kind, tool)
+
+    async def emit(self, correlation_id, kind, tool=None):
+        self.events.append((correlation_id, kind, tool))
 
 
 def _text(t):
@@ -118,6 +127,38 @@ async def test_max_iterations_converges():
     out = await runner.run("s1", [{"role": "user", "content": "x"}], _ctx())
     assert out == "converged"
     assert chat.tools_seen[-1] is None  # final convergence pass has no tools
+
+
+async def test_progress_events_emitted_around_tool():
+    from shared.progress import THINKING, TOOL_END, TOOL_START
+
+    async def handler(args, ctx):
+        return "tool result"
+
+    chat = ScriptedChat([_call("echo"), _text("done")])
+    runner = ToolRunner(chat, _registry(handler), make_settings())
+    emitter = FakeProgressEmitter()
+    out = await runner.run("s1", [{"role": "user", "content": "x"}], _ctx(emitter))
+    assert out == "done"
+    kinds = [(kind, tool) for _cid, kind, tool in emitter.events]
+    assert kinds == [
+        (THINKING, None),
+        (TOOL_START, "echo"),
+        (TOOL_END, "echo"),
+        (THINKING, None),
+    ]
+    assert all(cid == "cid1" for cid, _k, _t in emitter.events)
+
+
+async def test_no_progress_emitter_is_noop():
+    # ctx with progress=None must not raise (default path).
+    async def handler(args, ctx):
+        return "r"
+
+    chat = ScriptedChat([_call("echo"), _text("ok")])
+    runner = ToolRunner(chat, _registry(handler), make_settings())
+    out = await runner.run("s1", [{"role": "user", "content": "x"}], _ctx(progress=None))
+    assert out == "ok"
 
 
 async def test_chat_service_error_propagates():

@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. All tests green: **129 unit + 4 integration**.
+Status snapshot. All tests green: **142 unit + 4 integration**.
 
 ## Milestones (mapped to commits)
 
@@ -13,7 +13,8 @@ Status snapshot. All tests green: **129 unit + 4 integration**.
 | `62b4737` | Tier-3 per-user fact memory + token-driven tiers 1-2 (tiktoken); Alembic `0002` (`user_memory`). |
 | `5bd186a` | Fix "over-retire": ignore a `retire` for a key also set in the same delta. |
 | `01bc80c` | Tier-4 RAG (Qdrant + OpenAI embeddings) + extensible tool-calling framework; admin `/ingest`. |
-| _(latest)_ | `web_search` tool via Brave API; `@tool(requires=...)` config-gated registration. |
+| _(prev)_ | `web_search` tool via Brave API; `@tool(requires=...)` config-gated registration. |
+| _(latest)_ | Discord adapter (`discord.py`, mention/DM trigger, reaction status UX) + pub/sub progress channel for live tool/think status. |
 
 ## Memory tiers — all built
 
@@ -28,7 +29,7 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
 
 - **Processes**: `interfaces/worker.py` (core consumer), `interfaces/http_app.py`
   (chat gateway, `POST /chat`), `interfaces/admin_app.py` (`POST /ingest`),
-  `interfaces/cli.py` (fake adapter).
+  `interfaces/cli.py` (fake adapter), `interfaces/discord_app.py` (Discord bot).
 - **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`), Qdrant (`knowledge` collection).
 - **LLM**: configured for OpenAI `gpt-5.4-mini` in local `.env`.
 
@@ -48,6 +49,8 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_tool_registry.py`, `test_tool_loop.py` | tool registry; ToolRunner loop + guards |
 | `test_embeddings.py`, `test_vector_store.py`, `test_chunking.py`, `test_search_tool.py`, `test_ingest.py` | tier-4 RAG units (mocked) |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
+| `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
+| `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
 | `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + invariants |
 | `test_http_chat.py` | HTTP gateway (200/502/504/422) |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
@@ -68,8 +71,10 @@ SQLite/fakeredis are test-only.)
 
 ## Known limitations / rough edges
 
-- **Adapters**: only HTTP + CLI exist (effectively 1:1). Line/Discord not built
-  yet — group multi-user behaviour is modelled but unexercised.
+- **Adapters**: HTTP, CLI, and Discord exist. Line not built yet. Discord group
+  multi-user behaviour is modelled and now exercisable, but not load-tested.
+  Discord's live end-to-end path (gateway/reactions) is manually verified, not in
+  the automated suite (discord.py needs a real gateway + token).
 - **Tools**: only OpenAI implements tool-calling; other providers fall back to
   plain text. Two real tools: `search_knowledge` (RAG) and `web_search` (Brave;
   registered only when `BRAVE_API_KEY` is set).

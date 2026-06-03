@@ -42,6 +42,7 @@ Copy `.env.example` to `.env` and set at least:
 | `QDRANT_URL` | yes (for RAG) | e.g. `http://localhost:6333` |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIM` | optional | must stay fixed for a given Qdrant collection |
 | `BRAVE_API_KEY` | optional | enables the `web_search` tool (unset = tool disabled) |
+| `DISCORD_BOT_TOKEN` | optional | required to run the Discord adapter (Message Content Intent must be enabled) |
 
 **Never commit `.env`** (it's gitignored). Change the Postgres credentials from
 the `chat:chat` default for anything beyond local use.
@@ -63,6 +64,7 @@ automatically by the worker/admin app on startup (no manual step).
 | Chat gateway | `uvicorn interfaces.http_app:app --port 8753` | Stateless; put behind your public edge / TLS. Publishes inbound, waits for the correlated outbound. |
 | Admin (ingest) | `uvicorn interfaces.admin_app:app --port 8754` | Internal-only — **do not expose publicly** (no auth yet). |
 | CLI | `python -m interfaces.cli` | Optional local/manual driver. |
+| Discord bot | `python -m interfaces.discord_app` | Persistent gateway bot (own `discord-gateway` consumer group). Needs `DISCORD_BOT_TOKEN` + Message Content Intent. Run **one** instance (a second would double-handle messages). |
 
 Startup ordering: bring up services + run migrations first, then workers, then
 gateways. Workers and the gateway can start in any order (they rendezvous via
