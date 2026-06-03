@@ -93,9 +93,15 @@ def _apply_delta(
                 last_used_at=existing.last_used_at if existing else None,
             )
 
+    # Guard against a self-contradictory delta: if the LLM both sets a new value
+    # for a key (in facts) and retires it, the new value wins — ignore the
+    # retire. A value that merely changed is a replace, not a retirement.
+    fact_keys = {item.get("key") for item in delta.get("facts", []) or []}
     for item in delta.get("retire", []) or []:
         key = item.get("key")
-        entry = doc.facts.pop(key, None) if key else None
+        if not key or key in fact_keys:
+            continue
+        entry = doc.facts.pop(key, None)
         if entry is not None:
             doc.superseded.append(
                 SupersededEntry(key=key, value=entry.value, retired_at=now,

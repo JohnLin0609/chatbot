@@ -38,7 +38,11 @@ DEFAULT_FACT_PROMPT = (
     '"..."}]}\n'
     "Use cardinality 'single' for facts with one value (new value replaces old), "
     "'multi' for list-like facts (values accumulate). Only include facts that are "
-    "clearly stated or strongly implied. Do not invent. Omit unchanged facts."
+    "clearly stated or strongly implied. Do not invent. Omit unchanged facts.\n"
+    "When a fact's value CHANGES, put it in 'facts' with the new value (the old "
+    "value is archived automatically) — do NOT also retire it. Use 'retire' ONLY "
+    "for a fact that is no longer true AND has no replacement value. Never list "
+    "the same key in both 'facts' and 'retire'."
 )
 
 

@@ -65,6 +65,23 @@ async def test_retire():
     assert out.superseded[0].key == "location"
 
 
+async def test_facts_and_retire_same_key_keeps_new_value():
+    # Self-contradictory delta: set a new value AND retire the same key.
+    # The new value must win; created_at preserved; new value NOT superseded.
+    doc = UserMemoryDocument.empty("line:U1")
+    doc.facts["profession"] = FactEntry(value="後端工程師", created_at=NOW, updated_at=NOW)
+    delta = json.dumps({
+        "facts": [{"key": "profession", "value": "資料工程師"}],
+        "retire": [{"key": "profession", "reason": "changed jobs"}],
+    })
+    out = await _extractor(delta).extract("line:U1", doc, [])
+    assert out.facts["profession"].value == "資料工程師"
+    assert out.facts["profession"].created_at == NOW  # preserved
+    superseded_values = [s.value for s in out.superseded]
+    assert "後端工程師" in superseded_values   # old value archived
+    assert "資料工程師" not in superseded_values  # new value NOT retired
+
+
 async def test_rolling_summary_updated():
     delta = json.dumps({"rolling_summary": "User is a backend engineer."})
     out = await _extractor(delta).extract("line:U1", UserMemoryDocument.empty("line:U1"), [])
