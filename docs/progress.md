@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. All tests green: **129 unit + 2 integration**.
+Status snapshot. All tests green: **129 unit + 4 integration**.
 
 ## Milestones (mapped to commits)
 
@@ -52,6 +52,7 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_http_chat.py` | HTTP gateway (200/502/504/422) |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
 | `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI embeddings ingest→search |
+| `integration/test_web_search_roundtrip.py` | real Brave API search + tool formatting (skips without key) |
 
 Unit tests use **fakeredis**, in-memory **SQLite (StaticPool)**, and **FakeChat**
 fakes — no network or Docker needed. (See [decisions.md](decisions.md) on why
