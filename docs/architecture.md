@@ -59,12 +59,24 @@ responsible for normalising platform ids into this key.
 ## Memory: hot + durable
 
 - **Redis hot store** (`core/memory/hot_store.py`): recent turns (LIST, each
-  `{role,content,ts,user_id}`) and the channel summary (STRING) per session,
-  plus a per-user memory mirror, TTL-refreshed on write.
+  `{role,content,ts,user_id}`) and the channel summary (STRING) per session, with
+  a **10-minute idle TTL** refreshed on write. The per-user memory mirror has its
+  own longer TTL (`user_memory_ttl_seconds`), decoupled from the session cache.
 - **PostgreSQL** (`core/persistence/`): durable source of truth — `sessions`,
   `messages`, `summaries`, and `user_memory` (per-user JSONB document + an
   extraction cursor). On a cold/expired hot store the pipeline backfills from
   Postgres.
+
+### Session lifecycle (idle finalization)
+
+A session's hot cache expires after 10 min idle (= the user left). A periodic
+**sweeper in the worker** (`core/session/finalizer.py`) then folds each ended
+session into durable memory — the un-summarised tail → tier-2 channel summary,
+and a **forced** tier-3 per-user fact extraction (bypassing the token threshold,
+which short chats never reach). It's keyed on `sessions.last_active_at` +
+`finalized_at`, and re-entrant via the tier-2/tier-3 cursors, so a resumed
+session is re-finalised processing only new messages. Postgres stays
+authoritative; raw `messages` are never deleted.
 
 ## Memory tiers (token-driven)
 

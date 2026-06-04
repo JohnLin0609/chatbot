@@ -94,9 +94,24 @@ class Settings(BaseSettings):
     tiktoken_encoding: str = "o200k_base"
 
     # ------------------------------------------------------ Memory/context
-    hot_ttl_seconds: int = 604800  # 7 days
+    # Session conversation cache (recent turns + channel summary). 10 min idle =
+    # the user has left; the sweeper then finalises the session (see below).
+    hot_ttl_seconds: int = 600
+    # Tier-3 per-user memory mirror — decoupled from the session cache so the
+    # short session TTL doesn't thrash per-user memory caching. Postgres remains
+    # authoritative either way.
+    user_memory_ttl_seconds: int = 604800  # 7 days
     # Tier-1: current-context window size (whole turns kept under this budget).
     context_window_tokens: int = 3000
+
+    # ------------------------------------------- Session finalization (sweeper)
+    # When a session's hot cache has expired (idle past the threshold), a worker
+    # sweeper folds the conversation into durable memory: tier-2 channel summary
+    # + tier-3 per-user fact extraction (forced, bypassing the token threshold).
+    session_finalize_enabled: bool = True
+    session_finalize_idle_seconds: int = 600
+    session_sweep_interval_seconds: int = 60
+    session_sweep_batch: int = 50
 
     # ----------------------------------------------- Tier-2 channel summary
     # Turns overflowing the window are folded into a short per-channel summary.

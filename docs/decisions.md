@@ -195,6 +195,29 @@ token-chunked, dense-only, tool-triggered RAG:
   API route collisions; for now the SPA is dev-served (Vite) / statically hosted,
   talking to the API cross-origin (CORS is open).
 
+## Session lifecycle: short TTL + finalization
+
+- **10-minute hot-store TTL** (`hot_ttl_seconds=600`, was 7 days). >10 min idle is
+  treated as "the user left this conversation." The TTL is refreshed on every
+  write, so active chats never expire.
+- **Decoupled tier-3 mirror TTL.** The per-user memory Redis mirror moved to its
+  own `user_memory_ttl_seconds` (kept long) so the short *session* TTL doesn't
+  thrash per-user memory caching. Postgres is authoritative for both.
+- **Finalize on idle via a worker sweeper, not Redis expiry events.** A short TTL
+  means most conversations end before they ever reach tier-2 overflow or the
+  tier-3 token threshold — so their content would never enter durable memory. On
+  idle, a periodic sweeper (`core/session/finalizer.py`, run in the worker) folds
+  each ended session into durable memory: the un-summarised tail → channel summary
+  (tier-2), and **forced** per-user fact extraction (tier-3, bypassing the token
+  threshold). Sweeper over keyspace-expiry events because expiry events are
+  off-by-default, delayed, and best-effort (lost if the worker is down) — the
+  sweeper is self-healing and never misses a session.
+- **Idempotent / re-entrant.** Eligibility = `last_active_at < now-idle AND
+  (finalized_at IS NULL OR finalized_at < last_active_at)`; tier-2 uses the
+  summary's `covers_through_message_id` cursor and tier-3 its
+  `last_extracted_message_id` cursor, so re-finalizing a resumed session only
+  processes new messages. Raw `messages` are never deleted.
+
 ## Infrastructure
 
 - **Dedicated host ports** (Redis 6380, Postgres 5434) because the dev machine

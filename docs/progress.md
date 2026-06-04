@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. Backend tests green: **196 unit + 4 integration** (`pytest`).
+Status snapshot. Backend tests green: **203 unit + 4 integration** (`pytest`).
 Frontend: **16 tests** (`cd frontend && npm run test`).
 
 > The chatbot is a **control console** (chat UI + admin RAG management + chunk
@@ -23,7 +23,8 @@ Frontend: **16 tests** (`cd frontend && npm run test`).
 | _(prev)_ | Discord adapter (`discord.py`, mention/DM trigger, reaction status UX) + pub/sub progress channel for live tool/think status. |
 | _(prev)_ | **Phase 1 RAG engine**: hybrid (dense + BM25 sparse + RRF), Adaptive-RAG classifier routing, local Qwen3 rerank, per-type chunking (slides/prose/token), `documents` registry + enable/disable (Alembic `0003`), admin doc/chunk APIs. |
 | _(prev)_ | **Phase 2 auth + unified API**: JWT bearer auth, `users` table (Alembic `0004`, first-user-admin), single `interfaces/api_app.py` (`/auth/*` + `/chat` + admin-gated docs) replacing http_app + admin_app. |
-| _(latest)_ | **Phase 3 frontend SPA** (`frontend/`, React + Vite + TS + Tailwind): login/register, Claude-like chat tester, admin console (upload text/pptx, document toggle, chunk inspector). Vitest suite + browser e2e. |
+| _(prev)_ | **Phase 3 frontend SPA** (`frontend/`, React + Vite + TS + Tailwind): login/register, Claude-like chat tester, admin console (upload text/pptx, document toggle, chunk inspector). Vitest suite + browser e2e. |
+| _(latest)_ | Session lifecycle: 10-min hot TTL (decoupled tier-3 mirror TTL) + worker **idle-sweeper** that finalises ended sessions into tier-2 summary + tier-3 facts (Alembic `0005` `sessions.finalized_at`). |
 
 ## Memory tiers — all built
 
@@ -40,9 +41,10 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
 
 ## What runs today
 
-- **Processes**: `interfaces/worker.py` (core consumer), `interfaces/api_app.py`
-  (unified console API: auth + `/chat` + admin-gated docs/ingest, port 8753),
-  `interfaces/cli.py` (fake adapter), `interfaces/discord_app.py` (Discord bot).
+- **Processes**: `interfaces/worker.py` (core consumer **+ idle-session
+  finalization sweeper**), `interfaces/api_app.py` (unified console API: auth +
+  `/chat` + admin-gated docs/ingest, port 8753), `interfaces/cli.py` (fake
+  adapter), `interfaces/discord_app.py` (Discord bot).
 - **Frontend**: `frontend/` (React + Vite SPA, `npm run dev` on 5173) — consumes
   the API via JWT bearer; build to static `dist/`.
 - **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
@@ -72,6 +74,7 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
 | `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
 | `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + Adaptive-RAG injection + invariants |
+| `test_finalizer.py` | idle-session finalization: tier-2 fold, tier-3 force-extract, finalized_at, sweep selection + re-entrancy |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
 | `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI: ingest → dense + **hybrid** (BM25/RRF) search |
 | `integration/test_web_search_roundtrip.py` | real Brave API search + tool formatting (skips without key) |

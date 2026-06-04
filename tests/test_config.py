@@ -35,3 +35,12 @@ def test_new_infra_defaults():
     assert s.tiktoken_encoding == "o200k_base"
     assert s.inbound_stream == "chat:inbound"
     assert s.core_consumer_group == "core-workers"
+
+
+def test_session_ttl_and_finalize_defaults():
+    s = _settings()
+    assert s.hot_ttl_seconds == 600  # 10 min session cache
+    assert s.user_memory_ttl_seconds == 604800  # decoupled tier-3 mirror
+    assert s.session_finalize_enabled is True
+    assert s.session_finalize_idle_seconds == 600
+    assert s.session_sweep_interval_seconds == 60

@@ -26,7 +26,7 @@ class UserMemoryStore:
         await self._redis.set(
             self._key(user_key),
             doc.model_dump_json(),
-            ex=self._settings.hot_ttl_seconds,
+            ex=self._settings.user_memory_ttl_seconds,
         )
 
     async def load(self, db: AsyncSession, user_key: str) -> UserMemoryDocument:

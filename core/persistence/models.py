@@ -41,6 +41,11 @@ class Session(Base):
     last_active_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Set by the idle-sweeper when the session is finalised into durable memory.
+    # Re-eligible if last_active_at later exceeds this (session resumed).
+    finalized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"

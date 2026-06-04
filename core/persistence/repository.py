@@ -52,6 +52,28 @@ async def append_message(
     return message
 
 
+async def load_session_messages_after(
+    db: AsyncSession, session_id: int, after_id: int | None
+) -> list[Message]:
+    """A session's messages with id > after_id (None -> all), oldest-first."""
+    stmt = select(Message).where(Message.session_id == session_id)
+    if after_id is not None:
+        stmt = stmt.where(Message.id > after_id)
+    stmt = stmt.order_by(Message.id)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def session_user_ids(db: AsyncSession, session_id: int) -> list[str]:
+    """Distinct non-null user_ids that spoke in a session."""
+    result = await db.execute(
+        select(Message.user_id)
+        .where(Message.session_id == session_id, Message.user_id.is_not(None))
+        .distinct()
+    )
+    return [r for (r,) in result.all() if r]
+
+
 async def load_recent(
     db: AsyncSession, session_id: int, limit: int
 ) -> list[Message]:
@@ -83,6 +105,28 @@ async def save_summary(
     db.add(summary)
     await db.flush()
     return summary
+
+
+async def idle_unfinalized_sessions(
+    db: AsyncSession, cutoff, limit: int
+) -> list[Session]:
+    """Sessions idle since before `cutoff` that still need finalising — never
+    finalised, or active again since the last finalisation."""
+    from sqlalchemy import or_
+
+    result = await db.execute(
+        select(Session)
+        .where(
+            Session.last_active_at < cutoff,
+            or_(
+                Session.finalized_at.is_(None),
+                Session.finalized_at < Session.last_active_at,
+            ),
+        )
+        .order_by(Session.last_active_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
 
 
 async def get_latest_summary(db: AsyncSession, session_id: int) -> Summary | None:

@@ -72,7 +72,7 @@ automatically by the worker / API app on startup (no manual step).
 
 | Process | Command | Notes |
 | --- | --- | --- |
-| Core worker | `python -m interfaces.worker` | The brain. Run **N replicas** to scale — they share the `core-workers` consumer group on `chat:inbound`, so work is load-balanced and a crashed worker's messages are reclaimed (`XAUTOCLAIM`). |
+| Core worker | `python -m interfaces.worker` | The brain. Run **N replicas** to scale — they share the `core-workers` consumer group on `chat:inbound`, so work is load-balanced and a crashed worker's messages are reclaimed (`XAUTOCLAIM`). Each worker also runs the **idle-session sweeper** (folds ended sessions into durable memory); harmless if several run it. |
 | Console API | `uvicorn interfaces.api_app:app --port 8753` | JWT-authenticated: `/auth/*`, `/chat` (any user), `/documents`+`/ingest` (admin). Stateless; put behind your public edge / TLS. Replaces the old chat (8753) + admin (8754) apps. |
 | CLI | `python -m interfaces.cli` | Optional local/manual driver (publishes to streams directly; no auth). |
 | Discord bot | `python -m interfaces.discord_app` | Persistent gateway bot (own `discord-gateway` consumer group). Needs `DISCORD_BOT_TOKEN` + Message Content Intent. Run **one** instance (a second would double-handle messages). |

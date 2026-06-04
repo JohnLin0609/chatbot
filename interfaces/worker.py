@@ -39,6 +39,12 @@ async def run() -> None:
         log.warning("could not ensure Qdrant collection (RAG tool may be unavailable)")
     log.info("worker %s consuming %s", consumer, settings.inbound_stream)
 
+    if settings.session_finalize_enabled:
+        asyncio.create_task(_sweeper(deps, settings))
+        log.info("session sweeper started (every %ds, idle %ds)",
+                 settings.session_sweep_interval_seconds,
+                 settings.session_finalize_idle_seconds)
+
     while True:
         # Reclaim messages abandoned by crashed workers, then read new ones.
         claimed = await rc.autoclaim(
@@ -63,6 +69,20 @@ async def _safe_process(redis, deps, settings, message_id, fields) -> None:
         await _process(redis, deps, settings, message_id, fields)
     except Exception:  # noqa: BLE001 — keep the worker alive; leave msg unacked for retry
         log.exception("pipeline failed for message %s (left pending)", message_id)
+
+
+async def _sweeper(deps, settings) -> None:
+    """Periodically finalise idle sessions (fold into tier-2/3 durable memory)."""
+    from core.session.finalizer import sweep_idle_sessions
+
+    while True:
+        try:
+            n = await sweep_idle_sessions(deps)
+            if n:
+                log.info("session sweeper finalised %d session(s)", n)
+        except Exception:  # noqa: BLE001 — keep the sweeper alive
+            log.exception("session sweeper error")
+        await asyncio.sleep(settings.session_sweep_interval_seconds)
 
 
 if __name__ == "__main__":
