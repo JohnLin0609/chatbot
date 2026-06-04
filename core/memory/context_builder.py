@@ -14,6 +14,7 @@ def build_context(
     personal_memory_text: str,
     window_turns: list[dict],
     user_text: str,
+    knowledge_text: str = "",
 ) -> list[dict]:
     messages: list[dict] = [{"role": "system", "content": settings.system_prompt}]
 
@@ -26,6 +27,16 @@ def build_context(
             {
                 "role": "system",
                 "content": f"About the current speaker:\n{personal_memory_text}",
+            }
+        )
+    if knowledge_text:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Relevant knowledge (retrieved from the knowledge base; cite "
+                    f"it if useful):\n{knowledge_text}"
+                ),
             }
         )
 

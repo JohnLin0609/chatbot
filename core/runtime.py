@@ -9,7 +9,11 @@ from core.llm.factory import build_chat_service
 from core.memory.hot_store import HotStore
 from core.persistence.db import create_engine, create_sessionmaker
 from core.pipeline import PipelineDeps
+from core.rag.classifier import QueryClassifier
 from core.rag.embeddings import build_embedding_service
+from core.rag.reranker import build_reranker
+from core.rag.retriever import RagRetriever
+from core.rag.sparse import build_sparse_embedder
 from core.rag.vector_store import QdrantVectorStore
 from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
@@ -39,6 +43,13 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
     register_default_tools(registry, settings)
     tool_runner = ToolRunner(chat_service, registry, settings)
 
+    # Adaptive-RAG: classifier routes; retriever does hybrid search; reranker is
+    # the complex-tier cross-encoder (None if disabled/unavailable -> fused top-k).
+    sparse_embedder = build_sparse_embedder(settings)
+    classifier = QueryClassifier(chat_service, settings)
+    retriever = RagRetriever(vector_store, embedding_service, sparse_embedder, settings)
+    reranker = build_reranker(settings)
+
     return PipelineDeps(
         settings=settings,
         hot_store=hot_store,
@@ -53,4 +64,7 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
         vector_store=vector_store,
         web_search_service=web_search_service,
         progress_emitter=RedisProgressEmitter(redis, settings),
+        classifier=classifier,
+        retriever=retriever,
+        reranker=reranker,
     )

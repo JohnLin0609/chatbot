@@ -9,6 +9,11 @@ environment, while Redis/Postgres/Qdrant run via Docker Compose.
 - Docker + Docker Compose (Redis, Postgres, Qdrant)
 - Python 3.12 (to run worker / gateways), or wrap them yourself in a container
 - An `OPENAI_API_KEY` (chat default provider + embeddings)
+- For the full RAG engine: the heavy deps `fastembed` (BM25), `spacy` +
+  `python -m spacy download xx_sent_ud_sm` (prose chunking), and
+  `torch`+`transformers` (Qwen3 reranker, downloads ~1.2 GB on first use, GPU
+  optional). All are **optional** — the engine degrades to dense-only / token
+  chunking / no-rerank without them.
 
 ## 1. Backing services
 
@@ -50,11 +55,16 @@ the `chat:chat` default for anything beyond local use.
 ## 3. Database migration
 
 ```bash
-alembic upgrade head            # creates sessions/messages/summaries/user_memory
+alembic upgrade head            # sessions/messages/summaries/user_memory/documents
 ```
 
 Re-run after pulling new migrations. Qdrant's `knowledge` collection is created
 automatically by the worker/admin app on startup (no manual step).
+
+> **Breaking schema change:** the collection now uses **named dense + BM25 sparse
+> vectors**. An existing single-vector `knowledge` collection is incompatible —
+> drop it (and re-ingest curated docs) before upgrading. `ensure_collection` only
+> creates when missing, so a stale collection must be deleted manually.
 
 ## 4. Processes to run
 

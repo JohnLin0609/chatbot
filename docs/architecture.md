@@ -119,30 +119,48 @@ tools=None)` is the tool-capable path. OpenAI implements tool-calling
 (`supports_tools=True`); other providers inherit a default that ignores tools
 and returns text, so they degrade gracefully.
 
-## Tier-4: RAG via tools
+## Tool-calling loop
 
 The main reply runs through a **tool-calling loop** (`core/tools/loop.py`
 `ToolRunner`). The model may call tools mid-generation; `ToolRunner` executes
 the handler, stacks the result back as a `role=tool` message, and re-calls until
 the model returns plain text (bounded by `TOOL_MAX_ITERATIONS`). When tools are
 disabled or unsupported, it falls back to a single completion — so tier-1/2/3
-behaviour is unchanged.
+behaviour is unchanged. The live tool is **`web_search`** (Brave,
+`core/web/search_tool.py`), registered only when `BRAVE_API_KEY` is set.
 
 Tools are extensible: a new tool is one `@tool(...)`-decorated async handler
 (`core/tools/registry.py`); `register_default_tools` wires them into a
-`ToolRegistry`. Handlers receive a `ToolContext` (settings + embedding/vector
-store + session/user ids).
+`ToolRegistry`, optionally gated by a `requires(settings)` predicate. Handlers
+receive a `ToolContext` (settings + embedding/vector store + web-search service +
+session/user ids + progress emitter).
 
-The first tool is **`search_knowledge`** (`core/rag/search_tool.py`): it embeds
-the query (`core/rag/embeddings.py`, OpenAI `text-embedding-3-small`, fixed for
-the whole collection) and searches **Qdrant** (`core/rag/vector_store.py`)
-filtered to `source="curated"`. Curated documents are ingested via
-`POST /ingest` on a separate admin app (`interfaces/admin_app.py`):
-text → token chunks (`core/rag/chunking.py`) → embed → upsert
-(`core/rag/ingest.py`). RAG is retrieval-by-tool only — no auto-prefetch, and
-tiers 1-3 injection is untouched. The Qdrant payload carries a `source` field so
-auto-distilled conversation experiences (`source="distilled_experience"`) can be
-added later without schema/tool changes.
+## Tier-4: Adaptive-RAG (hybrid + rerank)
+
+Knowledge retrieval is **not** a tool — it is classifier-routed in the pipeline.
+For each message a small **classifier** (`core/rag/classifier.py`) labels the
+query `simple|medium|complex`: simple → no retrieval; medium → hybrid retrieve →
+fused **Top 3**; complex → hybrid retrieve a larger candidate set → **rerank**
+(local Qwen3-Reranker-0.6B, `core/rag/reranker.py`) → Top 3. The chosen chunks are
+injected into the prompt (`core/memory/context_builder.py`), then the tool loop
+runs.
+
+Retrieval (`core/rag/retriever.py`) is **hybrid**: each chunk has a dense vector
+(OpenAI `text-embedding-3-small`) and a BM25 **sparse** vector (fastembed,
+`core/rag/sparse.py`, with jieba CJK segmentation) in a Qdrant **named-vector**
+collection (sparse config uses `Modifier.IDF`); the Query API fuses both with
+**RRF** (`core/rag/vector_store.py`). Filtered to `source="curated"` and
+`enabled=true`.
+
+Curated documents are ingested via the admin app (`interfaces/admin_app.py`):
+`POST /ingest` (text) or `POST /ingest/pptx` (slides). Chunking is **per
+document type** (`core/rag/chunkers.py`): slides (one chunk per slide), prose
+(spaCy sentence-grouping with overlap), token (fixed windows). A Postgres
+`documents` registry (`core/documents/store.py`) tracks each doc and its
+`enabled` flag (mirrored to the Qdrant payload); `GET /documents/{id}/chunks`
+feeds the future chunk visualiser. The payload carries `source`/`user_key`/
+`channel_id` so distilled experiences and per-user conversation RAG can be added
+later without schema changes.
 
 ## Deferred (next phases)
 

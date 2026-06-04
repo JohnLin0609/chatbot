@@ -9,6 +9,7 @@ Platform-agnostic: passes correlation/routing fields through verbatim.
 """
 
 import asyncio
+import logging
 import time
 import uuid
 from dataclasses import dataclass
@@ -24,7 +25,10 @@ from core.memory.context_builder import build_context
 from core.memory.hot_store import HotStore
 from core.memory.token_window import select_window
 from core.persistence import repository as repo
+from core.rag.classifier import COMPLEX, SIMPLE, QueryClassifier
 from core.rag.embeddings import EmbeddingService
+from core.rag.reranker import Reranker
+from core.rag.retriever import RagRetriever
 from core.rag.vector_store import QdrantVectorStore
 from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
@@ -33,6 +37,8 @@ from core.tools.schemas import ToolContext
 from core.web.brave import BraveSearchService
 from shared.events import InboundEvent, OutboundEvent
 from shared.progress import ProgressEmitter
+
+log = logging.getLogger("pipeline")
 
 
 @dataclass
@@ -50,6 +56,10 @@ class PipelineDeps:
     vector_store: QdrantVectorStore
     web_search_service: BraveSearchService | None = None
     progress_emitter: ProgressEmitter | None = None
+    # Adaptive-RAG (optional; when absent the pipeline does no knowledge retrieval).
+    classifier: QueryClassifier | None = None
+    retriever: RagRetriever | None = None
+    reranker: Reranker | None = None
 
 
 def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
@@ -67,6 +77,41 @@ def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
         error=error,
         timestamp=time.time(),
     )
+
+
+def _format_knowledge(hits) -> str:
+    lines = []
+    for i, hit in enumerate(hits, start=1):
+        title = hit.title or "untitled"
+        lines.append(f"[{i}] ({title}) {hit.text}")
+    return "\n".join(lines)
+
+
+async def _retrieve_knowledge(deps: "PipelineDeps", query: str) -> str:
+    """Adaptive-RAG: classify the query, then retrieve (and optionally rerank)
+    curated knowledge. Returns a formatted block to inject, or "" for simple
+    queries / when retrieval is not wired. Best-effort — never raises."""
+    if not (deps.classifier and deps.retriever):
+        return ""
+    settings = deps.settings
+    try:
+        tier = await deps.classifier.classify(query)
+        if tier == SIMPLE:
+            return ""
+        if tier == COMPLEX:
+            hits = await deps.retriever.retrieve(
+                query, top_k=settings.rag_complex_candidates
+            )
+            if deps.reranker is not None:
+                hits = await deps.reranker.rerank(query, hits, settings.rag_complex_top_k)
+            else:
+                hits = hits[: settings.rag_complex_top_k]
+        else:  # medium
+            hits = await deps.retriever.retrieve(query, top_k=settings.rag_medium_top_k)
+        return _format_knowledge(hits)
+    except Exception:  # noqa: BLE001 — retrieval must never break the reply
+        log.warning("knowledge retrieval failed", exc_info=True)
+        return ""
 
 
 async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundEvent:
@@ -105,12 +150,15 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             summary, counter, settings.channel_summary_token_cap
         )
         personal_text, used_keys = render_personal_memory(user_doc, counter, settings)
+        # tier-4: Adaptive-RAG — classify, retrieve (+rerank), inject knowledge.
+        knowledge_text = await _retrieve_knowledge(deps, inbound.text)
         messages = build_context(
             settings,
             channel_summary_text=channel_text,
             personal_memory_text=personal_text,
             window_turns=window_turns,
             user_text=inbound.text,
+            knowledge_text=knowledge_text,
         )
 
         # Main reply runs through the tool-calling loop (the model may call

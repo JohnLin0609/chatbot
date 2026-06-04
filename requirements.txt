@@ -17,3 +17,6 @@ python-multipart
 python-pptx
 jieba
 spacy
+fastembed
+torch
+transformers

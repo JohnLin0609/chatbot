@@ -3,6 +3,22 @@
 Planned-but-unbuilt work, with the extension point that already exists for each
 (most of the scaffolding is in place by design).
 
+## Control console (multi-phase)
+
+A web control console: register/login, a chat-testing UI, and an admin area to
+insert/manage RAG texts, visualise chunking, and toggle texts on/off.
+
+- **Phase 1 — backend RAG engine + document model.** ✅ **built**: hybrid
+  (dense + BM25 sparse + RRF), Adaptive-RAG classifier routing, local Qwen3
+  rerank, per-type chunking (slides/prose/token), `documents` registry +
+  enable/disable, admin doc/chunk APIs (`GET /documents`,
+  `GET /documents/{id}/chunks`, `PATCH` toggle, `POST /ingest/pptx`).
+- **Phase 2 — auth + API.** Users/roles (admin vs user), JWT; secure the chat
+  (`http_app`) and admin (`admin_app`) APIs; promote admin endpoints behind auth.
+- **Phase 3 — frontend.** SPA: auth pages, chat UI, admin console (upload/manage
+  texts), chunk visualiser (vector-DB-style; feed = `GET /documents/{id}/chunks`),
+  per-text enable/disable toggle.
+
 ## Front-end adapters
 
 - **Discord adapter** — ✅ **built** (`interfaces/discord_app.py`): a `discord.py`
@@ -23,13 +39,16 @@ Discord adapter is the reference for a new platform.
 
 ## Tier-4 RAG growth
 
-- **Auto-distilled experiences** — instead of dumping raw conversation, an LLM
-  distills a reusable "case card" (situation → response → outcome) at a trigger
-  and embeds it. The Qdrant payload already reserves `source` — add
-  `source="distilled_experience"`; no schema/tool change needed.
-- **Per-user conversation RAG** — retrieve a speaker's own past conversations.
-  Payload reserves `user_key`/`channel_id`; `search_knowledge` (or a sibling
-  tool) would filter by `user_key` for this source.
+Done (Phase 1): hybrid dense+BM25/RRF, Adaptive-RAG classifier routing, Qwen3
+rerank, per-type chunking, document enable/disable. Remaining:
+
+- **More chunk strategies** — the registry (`core/rag/chunkers.py`) is keyed by
+  `doc_type`; add PDF, Markdown/HTML, code, transcripts, etc. (slides + prose +
+  token exist).
+- **Auto-distilled experiences** — an LLM distills a reusable "case card" and
+  embeds it under `source="distilled_experience"` (payload reserves `source`).
+- **Per-user conversation RAG** — retrieve a speaker's own past conversations;
+  the retriever would add a `user_key` filter for this source.
 
 ## Tools
 

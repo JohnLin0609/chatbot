@@ -12,11 +12,19 @@
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt   # includes runtime deps + pytest/fakeredis/aiosqlite
+python -m spacy download xx_sent_ud_sm  # multilingual sentence splitter (prose chunking)
 
 cp .env.example .env                   # set OPENAI_API_KEY (and PROVIDER/MODEL if not OpenAI)
 docker compose up -d                   # redis (6380), postgres (5434), qdrant (6333)
-alembic upgrade head                   # create tables
+alembic upgrade head                   # create tables (incl. `documents`)
 ```
+
+Heavy RAG deps (`fastembed` for BM25, `torch`+`transformers` for the Qwen3
+reranker, `spacy`) are optional — the engine degrades gracefully without them
+(dense-only retrieval / no rerank / token chunking). The first reranker use
+downloads `Qwen/Qwen3-Reranker-0.6B` (~1.2 GB). The `knowledge` Qdrant collection
+now uses **named dense + BM25 sparse vectors**; if you have an old single-vector
+collection, drop it and re-ingest.
 
 The app's config defaults point at the compose services. Redis/Postgres use
 **dedicated host ports 6380/5434** (not 6379/5432) to avoid colliding with other
@@ -44,14 +52,25 @@ The worker and admin app call `ensure_collection()` on Qdrant at startup.
 curl -X POST localhost:8753/chat -H 'Content-Type: application/json' \
   -d '{"session_id":"line:c1","message":"remember my name is Sam"}'
 
-# ingest + RAG
+# ingest curated knowledge (prose) + a slide deck, then chat
 curl -X POST localhost:8754/ingest -H 'Content-Type: application/json' \
-  -d '{"title":"Refund Policy","text":"Customers may request a refund within 14 days."}'
+  -d '{"title":"Refund Policy","text":"Customers may request a refund within 14 days.","doc_type":"prose"}'
+curl -X POST localhost:8754/ingest/pptx -F file=@deck.pptx -F title="Onboarding"
+
+# manage documents (admin)
+curl localhost:8754/documents                       # list
+curl localhost:8754/documents/<doc_id>/chunks        # inspect chunking (visualiser feed)
+curl -X PATCH localhost:8754/documents/<doc_id> \
+  -H 'Content-Type: application/json' -d '{"enabled": false}'   # disable in retrieval
+
 curl -X POST localhost:8753/chat -H 'Content-Type: application/json' \
   -d '{"session_id":"line:c1","message":"how long do I have to request a refund?"}'
 ```
 
-The worker logs `tool call: search_knowledge ...` when the model uses RAG.
+Knowledge RAG is **Adaptive-RAG** (not a tool): a classifier routes the query to
+`simple` (no retrieval) / `medium` (hybrid → fused Top 3) / `complex` (hybrid →
+Qwen3 rerank → Top 3), injected into the prompt. The worker logs `tool call:
+web_search ...` for the live-web tool.
 
 ### Discord adapter
 
@@ -111,9 +130,9 @@ async def get_weather(args: dict, ctx: ToolContext) -> str:
 ```
 
 `register_default_tools` (in `core/tools/registry.py`) imports tool modules so
-their decorators run, then registers them. `core/rag/search_tool.py` is the
-reference example. The OpenAI provider already supports the tool loop; nothing
-else needs changing.
+their decorators run, then registers them. `core/web/search_tool.py` (Brave
+`web_search`) is the reference example. The OpenAI provider already supports the
+tool loop; nothing else needs changing.
 
 To gate a tool on configuration (e.g. an API key), add a predicate:
 `@tool(..., requires=lambda s: bool(s.brave_api_key))` — the tool is registered

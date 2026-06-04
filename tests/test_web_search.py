@@ -84,5 +84,5 @@ def test_registered_only_when_key_present():
     without_key = ToolRegistry()
     register_default_tools(without_key, make_settings(brave_api_key=""))
     assert without_key.get("web_search") is None
-    # The unconditional RAG tool is still registered either way.
-    assert without_key.get("search_knowledge") is not None
+    # search_knowledge is no longer a tool (knowledge RAG is classifier-routed).
+    assert without_key.get("search_knowledge") is None

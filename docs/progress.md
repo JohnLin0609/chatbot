@@ -1,6 +1,11 @@
 # Progress
 
-Status snapshot. All tests green: **142 unit + 4 integration**.
+Status snapshot. All tests green: **168 unit + 4 integration**.
+
+> The chatbot is becoming a **control console** (chat UI + admin RAG management +
+> chunk visualiser + auth), built in phases: **Phase 1 = backend RAG engine +
+> document model (done)**, Phase 2 = auth/API, Phase 3 = frontend. See
+> [roadmap.md](roadmap.md).
 
 ## Milestones (mapped to commits)
 
@@ -14,23 +19,29 @@ Status snapshot. All tests green: **142 unit + 4 integration**.
 | `5bd186a` | Fix "over-retire": ignore a `retire` for a key also set in the same delta. |
 | `01bc80c` | Tier-4 RAG (Qdrant + OpenAI embeddings) + extensible tool-calling framework; admin `/ingest`. |
 | _(prev)_ | `web_search` tool via Brave API; `@tool(requires=...)` config-gated registration. |
-| _(latest)_ | Discord adapter (`discord.py`, mention/DM trigger, reaction status UX) + pub/sub progress channel for live tool/think status. |
+| _(prev)_ | Discord adapter (`discord.py`, mention/DM trigger, reaction status UX) + pub/sub progress channel for live tool/think status. |
+| _(latest)_ | **Phase 1 RAG engine**: hybrid (dense + BM25 sparse + RRF), Adaptive-RAG classifier routing, local Qwen3 rerank, per-type chunking (slides/prose/token), `documents` registry + enable/disable (Alembic `0003`), admin doc/chunk APIs. |
 
 ## Memory tiers — all built
 
 1. **Current context (tier-1)** — recent whole turns under `CONTEXT_WINDOW_TOKENS` (per channel).
 2. **Channel summary (tier-2)** — short running summary folded from window overflow (per channel, ~150 tokens).
 3. **User facts (tier-3)** — durable per-user JSON document (`user_memory`): structured facts + cross-session rolling summary, LLM-extracted at `FACT_EXTRACTION_TOKENS`.
-4. **RAG (tier-4)** — curated knowledge in Qdrant, retrieved via the `search_knowledge` tool (model-decided).
+4. **RAG (tier-4)** — curated knowledge in Qdrant (named **dense + BM25 sparse**
+   vectors), retrieved via **Adaptive-RAG**: a front LLM classifier routes each
+   query `simple` (no retrieval) / `medium` (hybrid → fused Top 3) / `complex`
+   (hybrid → Qwen3 rerank → Top 3); results are injected into the prompt. Chunked
+   per document type (slides/prose/token); per-doc enable/disable filters retrieval.
 
 Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_id`.
 
 ## What runs today
 
 - **Processes**: `interfaces/worker.py` (core consumer), `interfaces/http_app.py`
-  (chat gateway, `POST /chat`), `interfaces/admin_app.py` (`POST /ingest`),
-  `interfaces/cli.py` (fake adapter), `interfaces/discord_app.py` (Discord bot).
-- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`), Qdrant (`knowledge` collection).
+  (chat gateway, `POST /chat`), `interfaces/admin_app.py` (ingest text/pptx +
+  document/chunk/toggle APIs), `interfaces/cli.py` (fake adapter),
+  `interfaces/discord_app.py` (Discord bot).
+- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
 - **LLM**: configured for OpenAI `gpt-5.4-mini` in local `.env`.
 
 ## Test inventory
@@ -47,14 +58,17 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_events.py`, `test_repository.py` | event serialisation round-trips; persistence repo |
 | `test_user_memory_repo.py` (incl. schema), `test_facts_store.py`, `test_facts_renderer.py`, `test_facts_extractor.py` | tier-3 schema/repo/store/render/extract (incl. supersede + over-retire guard) |
 | `test_tool_registry.py`, `test_tool_loop.py` | tool registry; ToolRunner loop + guards |
-| `test_embeddings.py`, `test_vector_store.py`, `test_chunking.py`, `test_search_tool.py`, `test_ingest.py` | tier-4 RAG units (mocked) |
+| `test_embeddings.py`, `test_vector_store.py`, `test_chunking.py`, `test_ingest.py` | RAG units (embeddings; named-vector + hybrid store; token chunking; ingest) |
+| `test_chunkers.py`, `test_pptx.py`, `test_sparse.py` | per-type chunking (slides/prose/token), pptx parse, jieba BM25 tokenisation |
+| `test_documents.py` | DocumentStore CRUD + enable/disable |
+| `test_classifier.py`, `test_retriever.py`, `test_adaptive_rag.py`, `test_reranker.py` | Adaptive-RAG: classifier tiers, hybrid retrieve, routing (simple/medium/complex), rerank ordering + gate |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
 | `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
 | `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + invariants |
 | `test_http_chat.py` | HTTP gateway (200/502/504/422) |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
-| `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI embeddings ingest→search |
+| `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI: ingest → dense + **hybrid** (BM25/RRF) search |
 | `integration/test_web_search_roundtrip.py` | real Brave API search + tool formatting (skips without key) |
 
 Unit tests use **fakeredis**, in-memory **SQLite (StaticPool)**, and **FakeChat**
@@ -66,8 +80,9 @@ SQLite/fakeredis are test-only.)
 - Memory carries across turns ("記住我叫小明" → later recalled).
 - Facts auto-extracted into `user_memory`: `single` replace moves the old value
   to `superseded`, `multi` (e.g. languages) accumulates, plus a rolling summary.
-- RAG: ingested a refund policy; the model **autonomously called
-  `search_knowledge`** and answered from it; unrelated questions skip the tool.
+- RAG (Phase 1, component-verified live): hybrid ingest→search over real Qdrant
+  (dense + BM25/RRF); Qwen3-Reranker-0.6B loads and ranks refund docs above an
+  unrelated one. Full classifier-routed pipeline end-to-end is pending a live run.
 
 ## Known limitations / rough edges
 
@@ -76,8 +91,14 @@ SQLite/fakeredis are test-only.)
   Discord's live end-to-end path (gateway/reactions) is manually verified, not in
   the automated suite (discord.py needs a real gateway + token).
 - **Tools**: only OpenAI implements tool-calling; other providers fall back to
-  plain text. Two real tools: `search_knowledge` (RAG) and `web_search` (Brave;
-  registered only when `BRAVE_API_KEY` is set).
+  plain text. One real tool now: `web_search` (Brave; registered only when
+  `BRAVE_API_KEY` is set). Knowledge RAG is no longer a tool — it's
+  classifier-routed in the pipeline.
+- **RAG engine**: heavy deps (fastembed / spaCy / torch+transformers) are optional
+  and degrade (dense-only / token chunks / no-rerank). Classifier adds one LLM
+  call per message. Reranker is CPU-slow without a GPU. `xx_sent_ud_sm` zh/en
+  sentence boundaries are decent but not perfect. The named-vector collection is a
+  **breaking schema change** — recreate + re-ingest. Auth + frontend are Phase 2/3.
 - **RAG content**: curated uploads only (no auto-indexed conversation / distilled
   experience yet). `RAG_SCORE_THRESHOLD` defaults to 0 (uncalibrated).
 - **Tuning**: `fact_system_prompt` can occasionally over-retire (mitigated by a

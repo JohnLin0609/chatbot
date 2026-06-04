@@ -110,6 +110,47 @@ settled choices. Each entry: the decision, and the reasoning.
   finished message shows only ✅. Per-tool emojis come from a map, so a new tool
   gets its own reaction (default 🛠️) with no adapter change.
 
+## RAG engine — hybrid + Adaptive-RAG + per-type chunking (Phase 1 of control console)
+
+The chatbot is becoming a **control console** (chat UI + admin RAG management +
+chunk visualiser + auth), built in phases: **1 = backend RAG engine + document
+model** (done), 2 = auth/API, 3 = frontend. The Phase-1 engine replaced the old
+token-chunked, dense-only, tool-triggered RAG:
+
+- **Hybrid retrieval (dense + BM25 sparse, RRF).** Each chunk carries a dense
+  vector (OpenAI) and a BM25 **sparse** vector (fastembed) in a Qdrant
+  **named-vector** collection; queries fuse both server-side via the Query API
+  (`Prefetch` × 2 + `FusionQuery(RRF)`). The sparse vector config **must** set
+  `Modifier.IDF` — fastembed emits term frequencies only; Qdrant computes IDF
+  from collection stats at query time. **Chinese is segmented with jieba** before
+  BM25 at both ingest and query (shared `tokenize_for_bm25`), else CJK BM25 is
+  dead weight. Degrades to dense-only if fastembed is absent.
+- **Adaptive-RAG routing (front LLM classifier).** A small classifier call labels
+  each query `simple|medium|complex`: simple → answer directly (no retrieval);
+  medium → hybrid retrieve, inject fused **Top 3**; complex → retrieve a larger
+  candidate set → **rerank** → Top 3. Chosen over a tool-parameter so routing is
+  explicit/controllable. Knowledge RAG therefore moved from a model-called tool
+  to a **classifier-routed pre-fetch** injected into the prompt; the
+  `search_knowledge` tool was **removed**. `web_search` stays a model-called tool.
+  Classifier failures default to `medium` (retrieve, don't drop knowledge).
+- **Local Qwen3-Reranker-0.6B (complex tier only).** Small + multilingual (good
+  Chinese), so it fits even though it adds torch/transformers. Lazy-loaded,
+  inference in `asyncio.to_thread`; if unavailable, complex degrades to the fused
+  Top 3 (same as medium). Reranking only the complex tier bounds its cost.
+- **Per-type chunking.** A strategy registry keyed by `doc_type`: **slides**
+  (`.pptx` → python-pptx, one chunk per slide, split if over budget), **prose**
+  (spaCy `xx_sent_ud_sm` multilingual sentence segmentation, greedily packed to
+  the token budget with N-sentence overlap to preserve semantic boundaries),
+  **token** (fixed windows; fallback when spaCy is unavailable).
+- **Document registry + enable/disable.** A Postgres `documents` table is the
+  source of truth for the doc list/UI; chunks live in Qdrant. Toggling `enabled`
+  updates Postgres **and** mirrors to the Qdrant payload, so retrieval filters
+  `source="curated" AND enabled=true`. A chunk-inspection API (`scroll_doc`) feeds
+  the future visualiser.
+- **Heavy ML deps are optional + gated.** fastembed / spaCy / torch+transformers
+  each degrade gracefully (dense-only / token chunks / no-rerank), so the unit
+  suite and CI run without them.
+
 ## Infrastructure
 
 - **Dedicated host ports** (Redis 6380, Postgres 5434) because the dev machine
