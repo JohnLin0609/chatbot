@@ -96,6 +96,21 @@ class Summary(Base):
     session: Mapped[Session] = relationship(back_populates="summaries")
 
 
+class User(Base):
+    """Console account. The first account created is promoted to `admin`."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False, default="user")
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Document(Base):
     """Registry of curated RAG documents. Source of truth for the doc list / UI;
     chunks live in Qdrant. `enabled` gates retrieval (mirrored to Qdrant payload)."""

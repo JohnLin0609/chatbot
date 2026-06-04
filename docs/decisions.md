@@ -151,6 +151,28 @@ token-chunked, dense-only, tool-triggered RAG:
   each degrade gracefully (dense-only / token chunks / no-rerank), so the unit
   suite and CI run without them.
 
+## Auth & unified API (Phase 2 of control console)
+
+- **JWT bearer, access-token only.** Stateless (no session store), fits the
+  existing stateless API and is simplest for the SPA. Refresh tokens / rotation
+  deferred — the trade-off is that a token can't be revoked before it expires.
+- **One unified API app** (`interfaces/api_app.py`) replacing the separate chat
+  (`http_app`) and admin (`admin_app`) apps. The SPA gets one origin + one token;
+  admin routes are gated by a `require_admin` dependency. Built via a
+  `build_app(...)` factory so tests inject fakes and bypass lifespan (httpx
+  `ASGITransport` + `dependency_overrides`).
+- **Open self-registration; first account = admin.** Zero-config bootstrap (no
+  seed/env needed) for a personal console; lockable later via
+  `AUTH_OPEN_REGISTRATION=false`. The unique-email constraint guards duplicates.
+- **Authenticated identity drives memory.** `POST /chat` sets the inbound
+  `user_id` to the account id (`platform="web"`), so tier-3 personal memory keys
+  to the real user; `channel_id = "<user_id>:<conversation_id>"` scopes tier-1/2
+  per chat thread.
+- **Adapters stay unauthenticated by design.** CLI/Discord are trusted
+  server-side processes that publish to the Redis streams directly; auth is an
+  HTTP-edge concern, so only the API enforces it. bcrypt for passwords, pyjwt for
+  tokens — small, standard, no heavyweight framework.
+
 ## Infrastructure
 
 - **Dedicated host ports** (Redis 6380, Postgres 5434) because the dev machine

@@ -48,6 +48,8 @@ Copy `.env.example` to `.env` and set at least:
 | `EMBEDDING_MODEL` / `EMBEDDING_DIM` | optional | must stay fixed for a given Qdrant collection |
 | `BRAVE_API_KEY` | optional | enables the `web_search` tool (unset = tool disabled) |
 | `DISCORD_BOT_TOKEN` | optional | required to run the Discord adapter (Message Content Intent must be enabled) |
+| `JWT_SECRET` | yes (for the API) | long random value (>=32 bytes); if unset, tokens use an ephemeral dev secret and don't survive a restart |
+| `AUTH_OPEN_REGISTRATION` | optional | `true` (default) allows self-registration; first account becomes admin |
 
 **Never commit `.env`** (it's gitignored). Change the Postgres credentials from
 the `chat:chat` default for anything beyond local use.
@@ -55,11 +57,11 @@ the `chat:chat` default for anything beyond local use.
 ## 3. Database migration
 
 ```bash
-alembic upgrade head            # sessions/messages/summaries/user_memory/documents
+alembic upgrade head            # sessions/messages/summaries/user_memory/documents/users
 ```
 
 Re-run after pulling new migrations. Qdrant's `knowledge` collection is created
-automatically by the worker/admin app on startup (no manual step).
+automatically by the worker / API app on startup (no manual step).
 
 > **Breaking schema change:** the collection now uses **named dense + BM25 sparse
 > vectors**. An existing single-vector `knowledge` collection is incompatible —
@@ -71,9 +73,8 @@ automatically by the worker/admin app on startup (no manual step).
 | Process | Command | Notes |
 | --- | --- | --- |
 | Core worker | `python -m interfaces.worker` | The brain. Run **N replicas** to scale — they share the `core-workers` consumer group on `chat:inbound`, so work is load-balanced and a crashed worker's messages are reclaimed (`XAUTOCLAIM`). |
-| Chat gateway | `uvicorn interfaces.http_app:app --port 8753` | Stateless; put behind your public edge / TLS. Publishes inbound, waits for the correlated outbound. |
-| Admin (ingest) | `uvicorn interfaces.admin_app:app --port 8754` | Internal-only — **do not expose publicly** (no auth yet). |
-| CLI | `python -m interfaces.cli` | Optional local/manual driver. |
+| Console API | `uvicorn interfaces.api_app:app --port 8753` | JWT-authenticated: `/auth/*`, `/chat` (any user), `/documents`+`/ingest` (admin). Stateless; put behind your public edge / TLS. Replaces the old chat (8753) + admin (8754) apps. |
+| CLI | `python -m interfaces.cli` | Optional local/manual driver (publishes to streams directly; no auth). |
 | Discord bot | `python -m interfaces.discord_app` | Persistent gateway bot (own `discord-gateway` consumer group). Needs `DISCORD_BOT_TOKEN` + Message Content Intent. Run **one** instance (a second would double-handle messages). |
 
 Startup ordering: bring up services + run migrations first, then workers, then
@@ -86,7 +87,7 @@ Redis streams); a gateway request will time out (504) if no worker is consuming.
   distribution). The gateway is stateless — scale horizontally behind a load
   balancer; each instance runs its own `OutboundWaiter` (uses the
   `http-gateway` consumer group).
-- **Health**: `GET /health` on both gateway (8753) and admin (8754).
+- **Health**: `GET /health` on the API (8753).
 - **Persistence**: Postgres (`pgdata`) and Qdrant (`qdrant_data`) are Docker
   volumes — back them up. Redis is hot cache + transient streams; losing it
   loses in-flight messages and hot context (rebuilt from Postgres on next turn),
@@ -97,7 +98,9 @@ Redis streams); a gateway request will time out (504) if no worker is consuming.
 
 ## Known gaps (before production)
 
-- No authentication / rate limiting on the gateway or `/ingest`.
+- JWT auth gates the API, but no rate limiting / refresh tokens / password reset
+  yet. Set a strong `JWT_SECRET` and `AUTH_OPEN_REGISTRATION=false` once the admin
+  account exists if the API is exposed.
 - App processes not containerised; no orchestration manifests.
 - No CI/CD; no metrics/tracing.
 

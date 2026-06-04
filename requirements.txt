@@ -1,6 +1,9 @@
 fastapi
 uvicorn[standard]
 pydantic-settings
+pyjwt
+bcrypt
+email-validator
 anthropic
 openai
 google-genai

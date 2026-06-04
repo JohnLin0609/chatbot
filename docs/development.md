@@ -37,34 +37,36 @@ Each is a separate long-running process (own terminal):
 
 ```bash
 python -m interfaces.worker                   # core consumer: inbound stream -> pipeline -> outbound
-uvicorn interfaces.http_app:app --port 8753   # chat gateway: POST /chat (async, waits for reply)
-uvicorn interfaces.admin_app:app --port 8754  # admin: POST /ingest (curated knowledge)
+uvicorn interfaces.api_app:app --port 8753    # unified API: /auth/* + /chat + admin docs/ingest
 python -m interfaces.cli --session line:c1    # optional: fake adapter driving the streams
 python -m interfaces.discord_app              # Discord bot (needs DISCORD_BOT_TOKEN)
 ```
 
-The worker and admin app call `ensure_collection()` on Qdrant at startup.
+The worker and the API app call `ensure_collection()` on Qdrant at startup. The
+API is JWT-authenticated; CLI/Discord publish to the streams directly (no auth).
 
 ### Quick manual checks
 
 ```bash
-# chat (memory across turns)
-curl -X POST localhost:8753/chat -H 'Content-Type: application/json' \
-  -d '{"session_id":"line:c1","message":"remember my name is Sam"}'
+# register the FIRST account (becomes admin) and capture the token
+TOKEN=$(curl -s -X POST localhost:8753/auth/register -H 'Content-Type: application/json' \
+  -d '{"email":"me@x.com","password":"password123"}' | python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl localhost:8753/auth/me -H "Authorization: Bearer $TOKEN"
 
-# ingest curated knowledge (prose) + a slide deck, then chat
-curl -X POST localhost:8754/ingest -H 'Content-Type: application/json' \
+# ingest curated knowledge (admin-only)
+curl -X POST localhost:8753/ingest -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"title":"Refund Policy","text":"Customers may request a refund within 14 days.","doc_type":"prose"}'
-curl -X POST localhost:8754/ingest/pptx -F file=@deck.pptx -F title="Onboarding"
+curl -X POST localhost:8753/ingest/pptx -H "Authorization: Bearer $TOKEN" -F file=@deck.pptx -F title="Onboarding"
 
 # manage documents (admin)
-curl localhost:8754/documents                       # list
-curl localhost:8754/documents/<doc_id>/chunks        # inspect chunking (visualiser feed)
-curl -X PATCH localhost:8754/documents/<doc_id> \
-  -H 'Content-Type: application/json' -d '{"enabled": false}'   # disable in retrieval
+curl localhost:8753/documents -H "Authorization: Bearer $TOKEN"               # list
+curl localhost:8753/documents/<doc_id>/chunks -H "Authorization: Bearer $TOKEN"  # visualiser feed
+curl -X PATCH localhost:8753/documents/<doc_id> -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"enabled": false}'                 # disable in retrieval
 
-curl -X POST localhost:8753/chat -H 'Content-Type: application/json' \
-  -d '{"session_id":"line:c1","message":"how long do I have to request a refund?"}'
+# chat (authenticated; user_id ties to the account -> tier-3 memory)
+curl -X POST localhost:8753/chat -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"message":"how long do I have to request a refund?","conversation_id":"c1"}'
 ```
 
 Knowledge RAG is **Adaptive-RAG** (not a tool): a classifier routes the query to

@@ -13,11 +13,13 @@ insert/manage RAG texts, visualise chunking, and toggle texts on/off.
   rerank, per-type chunking (slides/prose/token), `documents` registry +
   enable/disable, admin doc/chunk APIs (`GET /documents`,
   `GET /documents/{id}/chunks`, `PATCH` toggle, `POST /ingest/pptx`).
-- **Phase 2 — auth + API.** Users/roles (admin vs user), JWT; secure the chat
-  (`http_app`) and admin (`admin_app`) APIs; promote admin endpoints behind auth.
+- **Phase 2 — auth + unified API.** ✅ **built**: JWT bearer auth, `users` table
+  (first-user-admin), single `interfaces/api_app.py` (`/auth/register|login|me` +
+  `/chat` + admin-gated `/documents`/`/ingest`) replacing http_app + admin_app.
+  Remaining auth polish (deferred): refresh tokens, rate limiting, password reset.
 - **Phase 3 — frontend.** SPA: auth pages, chat UI, admin console (upload/manage
   texts), chunk visualiser (vector-DB-style; feed = `GET /documents/{id}/chunks`),
-  per-text enable/disable toggle.
+  per-text enable/disable toggle. Consumes the Phase-2 API.
 
 ## Front-end adapters
 

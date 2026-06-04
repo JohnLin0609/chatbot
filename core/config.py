@@ -119,6 +119,15 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------- Gateway
     reply_timeout_seconds: float = 30.0  # how long /chat and the CLI wait for a reply
 
+    # ------------------------------------------------------------- Auth (API)
+    # JWT signing secret — set in prod; if empty an ephemeral dev secret is used
+    # (tokens won't survive a restart). Access-token only.
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_minutes: int = 1440  # 24h
+    # Open self-registration; the first account created becomes admin.
+    auth_open_registration: bool = True
+
     # ----------------------------------------------- Tier-4 RAG / vector store
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "knowledge"

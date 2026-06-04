@@ -1,11 +1,11 @@
 # Progress
 
-Status snapshot. All tests green: **168 unit + 4 integration**.
+Status snapshot. All tests green: **187 unit + 4 integration**.
 
 > The chatbot is becoming a **control console** (chat UI + admin RAG management +
 > chunk visualiser + auth), built in phases: **Phase 1 = backend RAG engine +
-> document model (done)**, Phase 2 = auth/API, Phase 3 = frontend. See
-> [roadmap.md](roadmap.md).
+> document model (done)**, **Phase 2 = auth + unified API (done)**, Phase 3 =
+> frontend SPA. See [roadmap.md](roadmap.md).
 
 ## Milestones (mapped to commits)
 
@@ -20,7 +20,8 @@ Status snapshot. All tests green: **168 unit + 4 integration**.
 | `01bc80c` | Tier-4 RAG (Qdrant + OpenAI embeddings) + extensible tool-calling framework; admin `/ingest`. |
 | _(prev)_ | `web_search` tool via Brave API; `@tool(requires=...)` config-gated registration. |
 | _(prev)_ | Discord adapter (`discord.py`, mention/DM trigger, reaction status UX) + pub/sub progress channel for live tool/think status. |
-| _(latest)_ | **Phase 1 RAG engine**: hybrid (dense + BM25 sparse + RRF), Adaptive-RAG classifier routing, local Qwen3 rerank, per-type chunking (slides/prose/token), `documents` registry + enable/disable (Alembic `0003`), admin doc/chunk APIs. |
+| _(prev)_ | **Phase 1 RAG engine**: hybrid (dense + BM25 sparse + RRF), Adaptive-RAG classifier routing, local Qwen3 rerank, per-type chunking (slides/prose/token), `documents` registry + enable/disable (Alembic `0003`), admin doc/chunk APIs. |
+| _(latest)_ | **Phase 2 auth + unified API**: JWT bearer auth, `users` table (Alembic `0004`, first-user-admin), single `interfaces/api_app.py` (`/auth/*` + `/chat` + admin-gated docs) replacing http_app + admin_app. |
 
 ## Memory tiers — all built
 
@@ -37,11 +38,10 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
 
 ## What runs today
 
-- **Processes**: `interfaces/worker.py` (core consumer), `interfaces/http_app.py`
-  (chat gateway, `POST /chat`), `interfaces/admin_app.py` (ingest text/pptx +
-  document/chunk/toggle APIs), `interfaces/cli.py` (fake adapter),
-  `interfaces/discord_app.py` (Discord bot).
-- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
+- **Processes**: `interfaces/worker.py` (core consumer), `interfaces/api_app.py`
+  (unified console API: auth + `/chat` + admin-gated docs/ingest, port 8753),
+  `interfaces/cli.py` (fake adapter), `interfaces/discord_app.py` (Discord bot).
+- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
 - **LLM**: configured for OpenAI `gpt-5.4-mini` in local `.env`.
 
 ## Test inventory
@@ -62,11 +62,12 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_chunkers.py`, `test_pptx.py`, `test_sparse.py` | per-type chunking (slides/prose/token), pptx parse, jieba BM25 tokenisation |
 | `test_documents.py` | DocumentStore CRUD + enable/disable |
 | `test_classifier.py`, `test_retriever.py`, `test_adaptive_rag.py`, `test_reranker.py` | Adaptive-RAG: classifier tiers, hybrid retrieve, routing (simple/medium/complex), rerank ordering + gate |
+| `test_auth_security.py`, `test_user_store.py` | bcrypt hash/verify; JWT encode/decode; first-user-admin, duplicate, authenticate |
+| `test_api_auth.py`, `test_api_chat.py`, `test_api_admin.py` | API: register/login/me; `/chat` 401-vs-authed + identity flow; admin 403-vs-200 (httpx ASGITransport + dep overrides) |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
 | `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
-| `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + invariants |
-| `test_http_chat.py` | HTTP gateway (200/502/504/422) |
+| `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + Adaptive-RAG injection + invariants |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
 | `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI: ingest → dense + **hybrid** (BM25/RRF) search |
 | `integration/test_web_search_roundtrip.py` | real Brave API search + tool formatting (skips without key) |
@@ -104,7 +105,10 @@ SQLite/fakeredis are test-only.)
 - **Tuning**: `fact_system_prompt` can occasionally over-retire (mitigated by a
   code guard, but the prompt could be sharper); channel-summary length relies on
   prompt + render truncation (no per-call `max_tokens` cap).
-- **Ops**: no auth/rate-limiting on gateways; ingest is unauthenticated; app
-  processes aren't containerised; no CI yet.
+- **Auth**: JWT bearer auth now gates the API (`/chat` requires a user; docs/ingest
+  require admin). Still missing: refresh tokens, rate limiting, password reset, and
+  the frontend (Phase 3). Registration is open (first user = admin); lock via
+  `AUTH_OPEN_REGISTRATION=false`.
+- **Ops**: app processes aren't containerised; no CI yet.
 
 See [roadmap.md](roadmap.md) for the planned work and where each slots in.

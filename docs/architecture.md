@@ -152,7 +152,7 @@ collection (sparse config uses `Modifier.IDF`); the Query API fuses both with
 **RRF** (`core/rag/vector_store.py`). Filtered to `source="curated"` and
 `enabled=true`.
 
-Curated documents are ingested via the admin app (`interfaces/admin_app.py`):
+Curated documents are ingested via the unified API (`interfaces/api_app.py`, admin-only):
 `POST /ingest` (text) or `POST /ingest/pptx` (slides). Chunking is **per
 document type** (`core/rag/chunkers.py`): slides (one chunk per slide), prose
 (spaCy sentence-grouping with overlap), token (fixed windows). A Postgres
@@ -162,12 +162,28 @@ feeds the future chunk visualiser. The payload carries `source`/`user_key`/
 `channel_id` so distilled experiences and per-user conversation RAG can be added
 later without schema changes.
 
+## Auth & the unified API (Phase 2)
+
+`interfaces/api_app.py` is one JWT-authenticated FastAPI app (replacing the old
+separate chat + admin apps) — the surface the Phase-3 SPA drives:
+
+- `POST /auth/register` (first account → `admin`, rest → `user`), `POST /auth/login`
+  → a bearer **access token** (pyjwt, HS256); `GET /auth/me`.
+- `POST /chat` requires a user; the authenticated id becomes the inbound
+  `user_id` (`platform="web"`), so tier-3 memory ties to the account.
+- `/documents*` and `/ingest*` require `admin` (`core/auth/deps.require_admin`).
+
+Passwords are bcrypt-hashed (`core/auth/security.py`); accounts live in the
+Postgres `users` table (`core/auth/store.py`). The CLI/Discord adapters are
+**unauthenticated by design** — they're trusted server-side processes that
+publish to the streams directly; only the HTTP API enforces auth.
+
 ## Deferred (next phases)
 
+- **Phase 3 frontend SPA** (chat UI, auth pages, admin console, chunk visualiser).
 - Line adapter (webhook FastAPI → inbound; outbound via reply/push API).
-  (Discord — discord.py gateway bot with reaction status UX — is **built**:
-  `interfaces/discord_app.py`.)
-- Auto-distilled conversation experiences into the vector store; per-user
-  conversation RAG; `get_member_memory` group tool; multi-provider tool support.
-- Dedupe hardening, streaming replies, auth, rate limiting.
+  (Discord — discord.py gateway bot with reaction status UX — is **built**.)
+- Auto-distilled conversation experiences; per-user conversation RAG;
+  `get_member_memory` group tool; multi-provider tool support.
+- Refresh tokens, rate limiting, password reset; dedupe hardening; streaming.
 ```
