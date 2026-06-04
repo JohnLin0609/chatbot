@@ -36,6 +36,21 @@ async def test_redis_mirror_hit(settings, redis, sessionmaker):
     assert await redis.get(store._key("line:U1")) is not None
 
 
+async def test_mirror_uses_decoupled_user_memory_ttl(redis, sessionmaker):
+    # The tier-3 mirror must use user_memory_ttl_seconds, NOT the short session
+    # hot_ttl_seconds — so the 10-min session cache doesn't expire user memory.
+    from tests.conftest import make_settings
+
+    settings = make_settings(hot_ttl_seconds=600, user_memory_ttl_seconds=999_999)
+    store = UserMemoryStore(redis, settings)
+    async with sessionmaker() as db:
+        await store.save(db, "line:U1", _doc())
+        await db.commit()
+    ttl = await redis.ttl(store._key("line:U1"))
+    assert ttl > 600  # not the short session TTL
+    assert ttl <= 999_999
+
+
 async def test_cursor_get_set(settings, redis, sessionmaker):
     store = UserMemoryStore(redis, settings)
     async with sessionmaker() as db:

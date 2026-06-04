@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. Backend tests green: **203 unit + 4 integration** (`pytest`).
+Status snapshot. Backend tests green: **204 unit + 4 integration** (`pytest`).
 Frontend: **16 tests** (`cd frontend && npm run test`).
 
 > The chatbot is a **control console** (chat UI + admin RAG management + chunk
