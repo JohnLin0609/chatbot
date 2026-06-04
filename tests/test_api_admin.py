@@ -40,6 +40,15 @@ class FakeVectorStore:
         self.payload_set = (doc_id, payload)
 
 
+class FakeIngest:
+    def __init__(self):
+        self.call = None
+
+    async def ingest_text(self, text, *, title=None, doc_type="prose", metadata=None, doc_id=None):
+        self.call = dict(text=text, title=title, doc_type=doc_type)
+        return ("new-doc", 3)
+
+
 def _user():
     return {"id": 2, "email": "u@x.com", "role": "user"}
 
@@ -54,6 +63,7 @@ async def app():
     app.state.settings = S
     app.state.documents = FakeDocStore()
     app.state.vector_store = FakeVectorStore()
+    app.state.ingest = FakeIngest()
     return app
 
 
@@ -98,3 +108,21 @@ async def test_documents_unauth_401(app):
     async with await _client(app) as c:
         r = await c.get("/documents")
     assert r.status_code == 401
+
+
+async def test_ingest_admin_ok(app):
+    app.dependency_overrides[get_current_user] = _admin
+    async with await _client(app) as c:
+        r = await c.post("/ingest", json={"text": "hello world", "doc_type": "prose"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert r.json() == {"doc_id": "new-doc", "chunks_ingested": 3}
+    assert app.state.ingest.call["text"] == "hello world"
+
+
+async def test_ingest_forbidden_for_user(app):
+    app.dependency_overrides[get_current_user] = _user
+    async with await _client(app) as c:
+        r = await c.post("/ingest", json={"text": "x", "doc_type": "prose"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 403

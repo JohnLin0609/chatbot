@@ -1,5 +1,6 @@
-"""/chat auth gating + identity flow (stream round-trip stubbed)."""
+"""/chat auth gating + identity flow + error mapping (stream round-trip stubbed)."""
 
+import asyncio
 import json
 
 import fakeredis.aioredis
@@ -16,6 +17,8 @@ S = make_settings(jwt_secret="api-secret")
 
 
 class FakeWaiter:
+    mode = "ok"  # "ok" | "error" | "timeout"
+
     def __init__(self, *a, **k):
         pass
 
@@ -29,10 +32,15 @@ class FakeWaiter:
         return None
 
     async def wait(self, cid):
+        if FakeWaiter.mode == "timeout":
+            raise asyncio.TimeoutError
+        status = "error" if FakeWaiter.mode == "error" else "ok"
         return OutboundEvent(
             event_id="o1", in_reply_to="e1", platform="web", channel_id="7:default",
-            session_id="web:7:default", correlation_id=cid, text="pong",
-            status="ok", timestamp=0.0,
+            session_id="web:7:default", correlation_id=cid,
+            text="pong" if status == "ok" else "",
+            status=status, error="boom" if status == "error" else None,
+            timestamp=0.0,
         )
 
 
@@ -50,6 +58,7 @@ async def _make_app():
 
 @pytest_asyncio.fixture
 async def app():
+    FakeWaiter.mode = "ok"  # reset shared mode between tests
     return await _make_app()
 
 
@@ -78,3 +87,21 @@ async def test_chat_authed_flows_user_identity(app):
     assert data["user_id"] == "7"
     assert data["platform"] == "web"
     assert data["channel_id"] == "7:t1"
+
+
+async def test_chat_timeout_returns_504(app):
+    app.dependency_overrides[get_current_user] = _user
+    FakeWaiter.mode = "timeout"
+    async with await _client(app) as c:
+        r = await c.post("/chat", json={"message": "hi"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 504
+
+
+async def test_chat_llm_error_returns_502(app):
+    app.dependency_overrides[get_current_user] = _user
+    FakeWaiter.mode = "error"
+    async with await _client(app) as c:
+        r = await c.post("/chat", json={"message": "hi"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 502

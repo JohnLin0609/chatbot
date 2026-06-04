@@ -66,3 +66,14 @@ async def test_me_without_token_401(client):
 async def test_me_bad_token_401(client):
     r = await client.get("/auth/me", headers={"Authorization": "Bearer garbage"})
     assert r.status_code == 401
+
+
+async def test_registration_closed_403(sessionmaker):
+    closed = make_settings(jwt_secret="api-secret", auth_open_registration=False)
+    app = build_app(settings=closed)
+    app.state.settings = closed
+    app.state.user_store = UserStore(sessionmaker)
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        r = await c.post("/auth/register", json={"email": "a@x.com", "password": "password1"})
+    assert r.status_code == 403

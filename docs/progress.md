@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. All tests green: **187 unit + 4 integration**.
+Status snapshot. All tests green: **192 unit + 4 integration**.
 
 > The chatbot is becoming a **control console** (chat UI + admin RAG management +
 > chunk visualiser + auth), built in phases: **Phase 1 = backend RAG engine +
