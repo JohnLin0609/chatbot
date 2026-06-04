@@ -196,6 +196,64 @@ async def test_fact_extraction_async_helper(redis, sessionmaker):
     assert row.last_extracted_message_id is not None
 
 
+# --------------------------------------------------------------- tier-4 (Adaptive-RAG)
+async def test_medium_query_injects_retrieved_knowledge(redis, sessionmaker):
+    """With classifier+retriever wired, handle_inbound retrieves and injects the
+    knowledge block into the LLM prompt."""
+    from core.rag.classifier import MEDIUM
+    from core.rag.vector_store import Hit
+
+    class FakeClassifier:
+        async def classify(self, q):
+            return MEDIUM
+
+    class FakeRetriever:
+        async def retrieve(self, q, *, top_k):
+            return [Hit(text="Refunds within 30 days.", score=0.9, title="Policy", payload={})]
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000_000)
+    chat = FakeChat()
+    deps = _deps(s, redis, sessionmaker, chat)
+    deps.classifier = FakeClassifier()
+    deps.retriever = FakeRetriever()
+
+    out = await handle_inbound(_inbound("how do refunds work?"), deps)
+    assert out.status == "ok"
+    # the retrieved chunk reached the model as a system knowledge block
+    injected = [m for call in chat.calls for m in call
+                if m["role"] == "system" and "Refunds within 30 days." in m["content"]]
+    assert injected, "retrieved knowledge was not injected into the prompt"
+
+
+async def test_simple_query_injects_nothing(redis, sessionmaker):
+    from core.rag.classifier import SIMPLE
+    from core.rag.vector_store import Hit
+
+    class FakeClassifier:
+        async def classify(self, q):
+            return SIMPLE
+
+    class FakeRetriever:
+        def __init__(self):
+            self.called = False
+
+        async def retrieve(self, q, *, top_k):
+            self.called = True
+            return [Hit(text="SHOULD NOT APPEAR", score=1.0, title=None, payload={})]
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000_000)
+    chat = FakeChat()
+    deps = _deps(s, redis, sessionmaker, chat)
+    deps.classifier = FakeClassifier()
+    retriever = FakeRetriever()
+    deps.retriever = retriever
+
+    await handle_inbound(_inbound("hi there"), deps)
+    assert not retriever.called  # simple tier skips retrieval entirely
+    leaked = [m for call in chat.calls for m in call if "SHOULD NOT APPEAR" in m["content"]]
+    assert not leaked
+
+
 # --------------------------------------------------------------- tier-4 (tools)
 async def test_pipeline_routes_through_tool_loop(redis, sessionmaker):
     """A tool-capable model calls search_knowledge; the pipeline executes it and
