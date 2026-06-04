@@ -1,9 +1,10 @@
 # Documentation
 
-A layered, async chatbot backend: a platform-agnostic **core** owns conversation
-behaviour (four memory tiers + tool-calling/RAG) and talks to a switchable LLM;
-thin **adapters** connect front-ends over Redis Streams. Durable state lives in
-PostgreSQL, hot context in Redis, and curated knowledge vectors in Qdrant.
+A layered, async chatbot **control console**: a platform-agnostic **core** owns
+conversation behaviour (four memory tiers + Adaptive-RAG/tools) and talks to a
+switchable LLM; **adapters** (unified JWT API, CLI, Discord) connect front-ends
+over Redis Streams; a React SPA (`frontend/`) provides chat + admin. Durable state
+lives in PostgreSQL + Qdrant, hot context in Redis.
 
 ## Documents
 
@@ -25,9 +26,9 @@ cp .env.example .env            # set OPENAI_API_KEY
 docker compose up -d            # redis (6380) + postgres (5434) + qdrant (6333)
 alembic upgrade head
 # then, in separate terminals:
-python -m interfaces.worker                  # core worker
-uvicorn interfaces.http_app:app --port 8753  # chat gateway
-uvicorn interfaces.admin_app:app --port 8754 # knowledge ingest
+python -m interfaces.worker                  # core worker + idle-session sweeper
+uvicorn interfaces.api_app:app --port 8753   # unified JWT API (/auth, /chat, admin docs)
+cd frontend && npm install && npm run dev    # web console (http://localhost:5173)
 ```
 
 See [development.md](development.md) for the full guide.

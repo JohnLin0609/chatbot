@@ -63,6 +63,12 @@ settled choices. Each entry: the decision, and the reasoning.
 
 ## RAG & tools (tier-4)
 
+> **Note:** the early "retrieval is a tool" decision below was **superseded** by
+> the Adaptive-RAG engine (see "RAG engine — hybrid + Adaptive-RAG …" further
+> down): the `search_knowledge` tool was removed and knowledge retrieval is now a
+> classifier-routed pre-fetch. The rest of this section (curated-first, Qdrant,
+> fixed embeddings, low-impact `complete()`) still holds.
+
 - **Curated uploads first, not raw conversation.** Embedding every turn pollutes
   retrieval and duplicates tiers 1-3. "Experience" has no clean rule-based
   definition, so it's deferred to LLM-distilled case cards later. Curated docs are
@@ -73,8 +79,9 @@ settled choices. Each entry: the decision, and the reasoning.
 - **OpenAI embeddings, fixed per collection.** The embedding model must be
   constant for a collection (dimension/consistency), so it's its own setting
   (`EMBEDDING_*`), independent of the switchable chat `PROVIDER`.
-- **Retrieval is a tool, not a prefetch.** The model decides when to call
-  `search_knowledge`. Tier 1-3 injection stays hardcoded.
+- **Retrieval is a tool, not a prefetch.** *(Superseded — now classifier-routed;
+  see the Adaptive-RAG section.)* Originally the model decided when to call
+  `search_knowledge`, with tier-1-3 injection hardcoded.
 - **Low-impact tool integration.** `ChatService.generate_reply` (used by tier-2/3)
   is left untouched; tool-calling goes through a new `complete(messages, tools)`.
   `ToolRunner` falls back to a single completion when tools are off/unsupported,
