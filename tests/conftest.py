@@ -69,14 +69,37 @@ class FakeVectorStore:
     async def ensure_collection(self):
         pass
 
-    async def search(self, vector, top_k, *, source=None, score_threshold=None):
-        return self._hits
+    async def search(self, vector, top_k, *, source=None, enabled=None,
+                     score_threshold=None):
+        return self._hits[:top_k]
+
+    async def hybrid_search(self, dense, sparse, top_k, *, source=None,
+                            enabled=True, prefetch_limit=50):
+        return self._hits[:top_k]
 
     async def upsert(self, points):
         pass
 
     async def delete_doc(self, doc_id):
         pass
+
+    async def set_payload(self, doc_id, payload):
+        pass
+
+    async def scroll_doc(self, doc_id):
+        return []
+
+
+class FakeSparseEmbedder:
+    def embed_documents(self, texts):
+        from core.rag.sparse import SparseVec
+
+        return [SparseVec(indices=[1, 2], values=[0.5, 0.5]) for _ in texts]
+
+    def embed_query(self, text):
+        from core.rag.sparse import SparseVec
+
+        return SparseVec(indices=[1, 2], values=[0.5, 0.5])
 
 
 @pytest_asyncio.fixture

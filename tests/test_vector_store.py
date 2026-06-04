@@ -37,11 +37,14 @@ def test_payload_has_source():
     assert pl["doc_id"] == "d" and pl["title"] == "T"
 
 
-async def test_ensure_collection_creates_when_missing(store):
+async def test_ensure_collection_creates_named_dense_and_sparse(store):
     await store.ensure_collection()
     store._mock.create_collection.assert_awaited_once()
     args = store._mock.create_collection.call_args.kwargs
-    assert args["vectors_config"].size == 1536
+    assert args["vectors_config"]["dense"].size == 1536
+    # sparse vector configured with IDF modifier (required for real BM25)
+    sparse_cfg = args["sparse_vectors_config"]["text-sparse"]
+    assert sparse_cfg.modifier is not None
 
 
 async def test_ensure_collection_skips_when_exists(store):
@@ -50,11 +53,42 @@ async def test_ensure_collection_skips_when_exists(store):
     store._mock.create_collection.assert_not_called()
 
 
-async def test_upsert_builds_points(store):
+async def test_upsert_builds_named_vectors(store):
     await store.upsert([VectorPoint(doc_id="d", chunk_index=0, vector=[0.1, 0.2], text="t")])
     pts = store._mock.upsert.call_args.kwargs["points"]
     assert len(pts) == 1
     assert pts[0].payload["text"] == "t"
+    assert pts[0].vector["dense"] == [0.1, 0.2]  # named dense vector
+
+
+async def test_upsert_includes_sparse_when_present(store):
+    p = VectorPoint(doc_id="d", chunk_index=0, vector=[0.1], text="t",
+                    sparse={"indices": [3, 7], "values": [0.4, 0.6]})
+    await store.upsert([p])
+    vec = store._mock.upsert.call_args.kwargs["points"][0].vector
+    assert "dense" in vec and "text-sparse" in vec
+
+
+async def test_hybrid_search_uses_prefetch_and_fusion(store):
+    r = MagicMock(score=0.5, payload={"text": "c", "title": "D"})
+    store._mock.query_points = AsyncMock(return_value=MagicMock(points=[r]))
+    hits = await store.hybrid_search([0.1], {"indices": [1], "values": [1.0]}, top_k=3,
+                                     source="curated")
+    assert hits and hits[0].text == "c"
+    kwargs = store._mock.query_points.call_args.kwargs
+    assert len(kwargs["prefetch"]) == 2  # dense + sparse branches
+    assert kwargs["query"] is not None  # FusionQuery
+
+
+async def test_hybrid_search_dense_only_when_no_sparse(store):
+    await store.hybrid_search([0.1], None, top_k=3, source="curated")
+    kwargs = store._mock.query_points.call_args.kwargs
+    assert len(kwargs["prefetch"]) == 1  # dense branch only
+
+
+async def test_hybrid_search_empty_on_error(store):
+    store._mock.query_points = AsyncMock(side_effect=RuntimeError("down"))
+    assert await store.hybrid_search([0.1], None, top_k=3) == []
 
 
 async def test_search_passes_source_filter(store):

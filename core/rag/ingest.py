@@ -12,6 +12,7 @@ from core.documents.store import DocumentStore
 from core.rag.chunkers import ChunkUnit, chunk_slides, chunk_text_doc
 from core.rag.embeddings import EmbeddingService
 from core.rag.pptx import parse_pptx
+from core.rag.sparse import SparseEmbedder
 from core.rag.vector_store import QdrantVectorStore, VectorPoint
 from core.tokens.counter import TokenCounter
 
@@ -34,12 +35,14 @@ class IngestService:
         vector_store: QdrantVectorStore,
         counter: TokenCounter,
         document_store: DocumentStore | None = None,
+        sparse_embedder: SparseEmbedder | None = None,
     ) -> None:
         self._settings = settings
         self._embedding = embedding_service
         self._store = vector_store
         self._counter = counter
         self._docs = document_store
+        self._sparse = sparse_embedder
 
     async def ingest_text(
         self,
@@ -85,7 +88,9 @@ class IngestService:
                 )
             return doc_id, 0
 
-        vectors = await self._embedding.embed([u.text for u in units])
+        texts = [u.text for u in units]
+        vectors = await self._embedding.embed(texts)
+        sparse = self._sparse.embed_documents(texts) if self._sparse else None
         now = datetime.now(timezone.utc).isoformat()
         points = [
             VectorPoint(
@@ -98,6 +103,8 @@ class IngestService:
                 metadata={**(metadata or {}), **u.metadata},
                 created_at=now,
                 enabled=True,
+                sparse={"indices": sparse[i].indices, "values": sparse[i].values}
+                if sparse else None,
             )
             for i, u in enumerate(units)
         ]

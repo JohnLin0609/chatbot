@@ -18,6 +18,7 @@ from core.documents.store import DocumentStore
 from core.persistence.db import create_engine, create_sessionmaker
 from core.rag.embeddings import build_embedding_service
 from core.rag.ingest import IngestService
+from core.rag.sparse import build_sparse_embedder
 from core.rag.vector_store import QdrantVectorStore
 from core.tokens.counter import TokenCounter
 
@@ -44,7 +45,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     embedding = build_embedding_service(settings)
     store = QdrantVectorStore(
-        settings.qdrant_url, settings.qdrant_collection, settings.embedding_dim
+        settings.qdrant_url, settings.qdrant_collection, settings.embedding_dim,
+        settings.rag_sparse_vector_name,
     )
     await store.ensure_collection()
     sessionmaker = create_sessionmaker(create_engine(settings.postgres_dsn))
@@ -52,7 +54,8 @@ async def lifespan(app: FastAPI):
     app.state.documents = documents
     app.state.vector_store = store
     app.state.ingest = IngestService(
-        settings, embedding, store, TokenCounter(settings.tiktoken_encoding), documents
+        settings, embedding, store, TokenCounter(settings.tiktoken_encoding),
+        documents, build_sparse_embedder(settings),
     )
     yield
 

@@ -31,7 +31,8 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
 
     embedding_service = build_embedding_service(settings)
     vector_store = QdrantVectorStore(
-        settings.qdrant_url, settings.qdrant_collection, settings.embedding_dim
+        settings.qdrant_url, settings.qdrant_collection, settings.embedding_dim,
+        settings.rag_sparse_vector_name,
     )
     web_search_service = build_web_search_service(settings)
     registry = ToolRegistry()
