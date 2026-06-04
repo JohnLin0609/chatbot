@@ -272,3 +272,31 @@ token-chunked, dense-only, tool-triggered RAG:
   list" idea, which broke once an API path (`/admin/system-prompt`) collided with a
   same-named SPA route — the same collision risk noted above for a FastAPI static
   mount, resolved here by giving the API its own namespace.
+
+## Eval logging (capture layer)
+
+- **Capture now, score later.** This phase only persists per-turn context; the
+  LLM-as-judge, metric computation, and dashboards are later phases. The schema is
+  their join target.
+- **Rich main-turn trace + lightweight per-call telemetry.** Only the main reply
+  carries retrieval context worth evaluating, so it gets `eval_traces` +
+  `eval_retrieved_chunks`. Every LLM call (incl. classifier/summarizer/extractor)
+  also gets a lightweight `llm_calls` row for cost/latency — captured by wrapping
+  the chat service in an `InstrumentedChatService` per consumer, so no provider or
+  call site changes.
+- **Parent + child tables, not one JSONB blob.** Per-candidate rows let judge
+  labels / golden relevance attach per chunk and let metrics compute in SQL.
+- **Golden-set tables reserved but unpopulated.** True **Recall@k** needs the full
+  set of relevant chunks in the corpus and **Correctness** needs a reference answer
+  — a judge over only the *retrieved* chunks cannot measure what retrieval missed.
+  `eval_golden_queries`/`eval_golden_relevant_chunks` exist for when we author that
+  set; reference-free metrics (Faithfulness, Answer Relevance, Context Utilization,
+  judge-labeled Precision@k/MRR/NDCG over retrieved) need only the logged traces.
+- **tiktoken-estimated tokens.** Providers currently drop usage and `generate_reply`
+  returns only a string; estimating via the existing `TokenCounter` is provider-
+  agnostic (incl. Ollama) and needs zero interface churn. Real provider usage can
+  be threaded later. Likewise only the **fused** RRF score+rank is logged (Qdrant
+  fuses dense+sparse server-side, so components aren't separable).
+- **Async, best-effort, gated.** Logging is fired via `asyncio.create_task` after
+  the turn commits and every write is wrapped so a logging failure never affects the
+  reply; `eval_logging_enabled=false` swaps in a `NullEvalLogger` no-op.

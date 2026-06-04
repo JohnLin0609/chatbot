@@ -206,6 +206,33 @@ console (upload text/`.pptx`, document enable/disable, chunk inspector, a global
 Docker it's built to static `dist/` and served by nginx, which reverse-proxies the
 API under `/api/` (single origin, no CORS, no SPA-vs-API path collisions).
 
+## Eval logging (capture layer)
+
+Every main-reply turn is captured for offline analysis (RAG retrieval metrics +
+generation metrics, future LLM-as-judge). Writes are **best-effort and async**
+(fire-and-forget after the turn commits) so they never block or break a reply;
+toggled by `eval_logging_enabled`.
+
+- `core/eval/instrument.py` `InstrumentedChatService` wraps the chat service per
+  consumer (`main_reply`/`classifier`/`summarizer`/`fact_extract`) and records a
+  lightweight **`llm_calls`** row per call (model, provider, tiktoken-estimated
+  tokens, latency, ok/error) — unified cost/telemetry across every LLM call.
+- `core/pipeline.py` `_retrieve_knowledge` now returns a `RetrievalTrace` (the
+  classified tier + every candidate with `(doc_id, chunk_index)`/point_id, fused
+  RRF score + rank, rerank score, and whether it entered the injected top-k).
+  `handle_inbound` times retrieval vs generation and fires
+  `EvalLogger.log_trace` (`core/eval/logger.py`), writing an **`eval_traces`** row
+  (full assembled `messages`, system prompt, knowledge block, reply,
+  `reply_message_id`, token/latency split) + child **`eval_retrieved_chunks`** rows.
+- **`eval_golden_queries`** / **`eval_golden_relevant_chunks`** are reserved
+  (created, unpopulated) for a future golden set — true Recall@k / Correctness need
+  ground-truth relevance/answers that a judge over only-retrieved chunks can't
+  provide. Reference-free metrics (Faithfulness, Answer Relevance, Context
+  Utilization, judge-labeled Precision@k/MRR/NDCG over the retrieved set) run on
+  the captured traces alone. Token usage is **tiktoken-estimated** (providers drop
+  real usage today); dense/sparse scores aren't separable (RRF fuses server-side),
+  so the **fused** score+rank is logged.
+
 ## Deferred (next phases)
 
 - Embedding 2D-projection chunk visualiser; streaming chat.

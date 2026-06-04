@@ -47,7 +47,7 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
   adapter), `interfaces/discord_app.py` (Discord bot).
 - **Frontend**: `frontend/` (React + Vite SPA, `npm run dev` on 5173) — consumes
   the API via JWT bearer; build to static `dist/`.
-- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`/`app_settings`/`message_feedback`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
+- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`/`app_settings`/`message_feedback`/`llm_calls`/`eval_traces`/`eval_retrieved_chunks`/`eval_golden_*`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
 - **LLM**: configured for OpenAI `gpt-5.4-mini` in local `.env`.
 - **Per-user sessions**: the web conversation list is scoped per account
   (localStorage `cc_conversations_<id>`), capped at 20 (oldest-evicted, warned);
@@ -60,6 +60,11 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
   `POST /messages/{id}/feedback` + admin summary (`GET /admin/feedback/summary`).
 - **Docker**: full stack via `docker compose --profile app up -d` (nginx serves the
   SPA and reverse-proxies the API under `/api/`; console on :8080).
+- **Eval capture**: every turn logs an `eval_trace` (full context, reply, tier,
+  token/latency) + child `eval_retrieved_chunk` rows (per-candidate scores/ranks +
+  whether injected); every LLM call logs a lightweight `llm_call` (model/tokens/
+  latency). Golden-set tables reserved for future true Recall@k/Correctness. Async,
+  best-effort, gated by `EVAL_LOGGING_ENABLED`.
 
 ## Test inventory
 
@@ -84,6 +89,8 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_api_features.py` | `/chat` reply_message_id; `DELETE /sessions/{cid}` (auth + structural ownership); `GET/PUT /admin/system-prompt` + reset (admin-gated); `POST /messages/{id}/feedback` toggle; `GET /admin/feedback/summary` (admin-gated) |
 | `test_feedback.py`, `test_repository.py` (extended) | feedback insert/toggle/flip + summary; session cascade-delete (+ feedback) + app-setting KV CRUD |
 | `test_context_builder.py` (extended) | system-prompt override wins; None/empty falls back to the default |
+| `test_eval_logger.py`, `test_eval_instrument.py` | eval trace parent+child write, body-nulling, never-raises; instrumented chat records llm_call usage/latency, passes calls through, survives logger failure |
+| `test_adaptive_rag.py`/`test_reranker.py`/`test_pipeline.py` (extended) | `_retrieve_knowledge` returns a `RetrievalTrace` (candidates + included); rerank attaches scores; a turn writes an eval_trace (+chunks for RAG, none for simple) |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
 | `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
