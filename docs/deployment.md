@@ -81,6 +81,18 @@ Startup ordering: bring up services + run migrations first, then workers, then
 gateways. Workers and the gateway can start in any order (they rendezvous via
 Redis streams); a gateway request will time out (504) if no worker is consuming.
 
+### Frontend (control console SPA)
+
+```bash
+cd frontend
+npm ci
+VITE_API_BASE_URL=https://api.example.com npm run build   # -> frontend/dist/
+```
+
+Serve the static `dist/` from any static host / CDN / edge (nginx, etc.), or your
+reverse proxy. Set `VITE_API_BASE_URL` (at build time) to the public API origin;
+the API's CORS currently allows all origins (tighten for production).
+
 ## 5. Operational notes
 
 - **Scaling**: add worker replicas for throughput (consumer group handles

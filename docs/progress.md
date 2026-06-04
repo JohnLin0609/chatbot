@@ -1,11 +1,12 @@
 # Progress
 
-Status snapshot. All tests green: **196 unit + 4 integration**.
+Status snapshot. Backend tests green: **196 unit + 4 integration** (`pytest`).
+Frontend: **16 tests** (`cd frontend && npm run test`).
 
-> The chatbot is becoming a **control console** (chat UI + admin RAG management +
-> chunk visualiser + auth), built in phases: **Phase 1 = backend RAG engine +
-> document model (done)**, **Phase 2 = auth + unified API (done)**, Phase 3 =
-> frontend SPA. See [roadmap.md](roadmap.md).
+> The chatbot is a **control console** (chat UI + admin RAG management + chunk
+> visualiser + auth), built in phases — all done: **Phase 1 = backend RAG
+> engine + document model**, **Phase 2 = auth + unified API**, **Phase 3 =
+> frontend SPA**. See [roadmap.md](roadmap.md).
 
 ## Milestones (mapped to commits)
 
@@ -21,7 +22,8 @@ Status snapshot. All tests green: **196 unit + 4 integration**.
 | _(prev)_ | `web_search` tool via Brave API; `@tool(requires=...)` config-gated registration. |
 | _(prev)_ | Discord adapter (`discord.py`, mention/DM trigger, reaction status UX) + pub/sub progress channel for live tool/think status. |
 | _(prev)_ | **Phase 1 RAG engine**: hybrid (dense + BM25 sparse + RRF), Adaptive-RAG classifier routing, local Qwen3 rerank, per-type chunking (slides/prose/token), `documents` registry + enable/disable (Alembic `0003`), admin doc/chunk APIs. |
-| _(latest)_ | **Phase 2 auth + unified API**: JWT bearer auth, `users` table (Alembic `0004`, first-user-admin), single `interfaces/api_app.py` (`/auth/*` + `/chat` + admin-gated docs) replacing http_app + admin_app. |
+| _(prev)_ | **Phase 2 auth + unified API**: JWT bearer auth, `users` table (Alembic `0004`, first-user-admin), single `interfaces/api_app.py` (`/auth/*` + `/chat` + admin-gated docs) replacing http_app + admin_app. |
+| _(latest)_ | **Phase 3 frontend SPA** (`frontend/`, React + Vite + TS + Tailwind): login/register, Claude-like chat tester, admin console (upload text/pptx, document toggle, chunk inspector). Vitest suite + browser e2e. |
 
 ## Memory tiers — all built
 
@@ -41,6 +43,8 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
 - **Processes**: `interfaces/worker.py` (core consumer), `interfaces/api_app.py`
   (unified console API: auth + `/chat` + admin-gated docs/ingest, port 8753),
   `interfaces/cli.py` (fake adapter), `interfaces/discord_app.py` (Discord bot).
+- **Frontend**: `frontend/` (React + Vite SPA, `npm run dev` on 5173) — consumes
+  the API via JWT bearer; build to static `dist/`.
 - **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
 - **LLM**: configured for OpenAI `gpt-5.4-mini` in local `.env`.
 
@@ -75,6 +79,11 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 Unit tests use **fakeredis**, in-memory **SQLite (StaticPool)**, and **FakeChat**
 fakes — no network or Docker needed. (See [decisions.md](decisions.md) on why
 SQLite/fakeredis are test-only.)
+
+**Frontend** (`frontend/`, Vitest + React Testing Library, 16 tests): API client
+(Bearer / 401), auth context, route guards (protected + admin), ChunkInspector
+& MessageBubble render, conversation storage. Plus a manual **browser e2e**
+(register→admin→upload→inspect chunks→RAG chat) verified with Playwright.
 
 ## Verified live (OpenAI gpt-5.4-mini)
 

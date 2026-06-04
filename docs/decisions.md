@@ -173,6 +173,28 @@ token-chunked, dense-only, tool-triggered RAG:
   HTTP-edge concern, so only the API enforces it. bcrypt for passwords, pyjwt for
   tokens — small, standard, no heavyweight framework.
 
+## Frontend SPA (Phase 3 of control console)
+
+- **React + Vite + TypeScript**, plain **Tailwind** (no heavy component lib).
+  Lightweight, fast dev server, builds to static `dist/`; the backend is already
+  a REST API so SSR (Next.js) would be over-engineering. Lives in `frontend/`,
+  fully decoupled from the Python backend.
+- **JWT in localStorage + a small fetch wrapper.** `api/client.ts` attaches the
+  Bearer token and, on any 401, clears the token and triggers logout (bounce to
+  `/login`). `AuthContext` loads `/auth/me` on mount. No state-management library
+  — React context + local state is enough for this size.
+- **Chunk *inspector*, not a 2D projection.** The "visualise the chunking"
+  requirement is met by listing each chunk (text + slide/metadata + enabled badge)
+  from `GET /documents/{id}/chunks` — immediately useful with the existing API. A
+  UMAP/t-SNE embedding scatter would need a new vectors endpoint + dimensionality
+  reduction; deferred.
+- **Conversations are client-side.** The backend has no conversation-list
+  endpoint, so the sidebar stores conversations + messages in `localStorage`; the
+  real cross-turn memory still lives server-side (keyed `web:<userId>:<conv>`).
+- **No FastAPI static mount (yet).** Serving `dist/` from `api_app` risks SPA-vs-
+  API route collisions; for now the SPA is dev-served (Vite) / statically hosted,
+  talking to the API cross-origin (CORS is open).
+
 ## Infrastructure
 
 - **Dedicated host ports** (Redis 6380, Postgres 5434) because the dev machine

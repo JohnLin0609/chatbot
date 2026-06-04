@@ -17,9 +17,11 @@ insert/manage RAG texts, visualise chunking, and toggle texts on/off.
   (first-user-admin), single `interfaces/api_app.py` (`/auth/register|login|me` +
   `/chat` + admin-gated `/documents`/`/ingest`) replacing http_app + admin_app.
   Remaining auth polish (deferred): refresh tokens, rate limiting, password reset.
-- **Phase 3 — frontend.** SPA: auth pages, chat UI, admin console (upload/manage
-  texts), chunk visualiser (vector-DB-style; feed = `GET /documents/{id}/chunks`),
-  per-text enable/disable toggle. Consumes the Phase-2 API.
+- **Phase 3 — frontend.** ✅ **built** (`frontend/`, React + Vite + TS + Tailwind):
+  login/register, Claude-like chat tester, admin console (upload text/`.pptx`,
+  document enable/disable toggle, **chunk inspector** = `GET /documents/{id}/chunks`).
+  Deferred: embedding 2D-projection visualiser, streaming chat, optional FastAPI
+  static-serve of `dist/`.
 
 ## Front-end adapters
 

@@ -45,6 +45,22 @@ python -m interfaces.discord_app              # Discord bot (needs DISCORD_BOT_T
 The worker and the API app call `ensure_collection()` on Qdrant at startup. The
 API is JWT-authenticated; CLI/Discord publish to the streams directly (no auth).
 
+### Frontend (control console SPA)
+
+```bash
+cd frontend
+npm install
+npm run dev          # Vite dev server on http://localhost:5173
+npm run test         # Vitest (jsdom) unit/component tests
+npm run build        # type-check + build to dist/
+```
+
+React + Vite + TypeScript + Tailwind. It calls the API at `VITE_API_BASE_URL`
+(default `http://localhost:8753`; copy `.env.example` to `.env` to override).
+Open `localhost:5173`, **register the first account** (becomes admin), then chat
+or use the **Admin** tab to upload knowledge, toggle documents, and inspect
+chunks. JWT is kept in `localStorage`; a 401 bounces you to `/login`.
+
 ### Quick manual checks
 
 ```bash

@@ -178,9 +178,16 @@ Postgres `users` table (`core/auth/store.py`). The CLI/Discord adapters are
 **unauthenticated by design** — they're trusted server-side processes that
 publish to the streams directly; only the HTTP API enforces auth.
 
+## Frontend
+
+The **Phase-3 SPA** (`frontend/`, React + Vite + TS + Tailwind) consumes this API
+over JWT bearer: login/register, a chat tester, and an admin console (upload
+text/`.pptx`, document enable/disable, chunk inspector). It's fully decoupled —
+dev-served by Vite, built to static `dist/`; CORS is open.
+
 ## Deferred (next phases)
 
-- **Phase 3 frontend SPA** (chat UI, auth pages, admin console, chunk visualiser).
+- Embedding 2D-projection chunk visualiser; streaming chat.
 - Line adapter (webhook FastAPI → inbound; outbound via reply/push API).
   (Discord — discord.py gateway bot with reaction status UX — is **built**.)
 - Auto-distilled conversation experiences; per-user conversation RAG;
