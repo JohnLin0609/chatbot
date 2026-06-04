@@ -41,12 +41,20 @@ class FakeVectorStore:
 
 
 class FakeIngest:
-    def __init__(self):
+    def __init__(self, pptx_error=False):
         self.call = None
+        self.pptx_call = None
+        self._pptx_error = pptx_error
 
     async def ingest_text(self, text, *, title=None, doc_type="prose", metadata=None, doc_id=None):
         self.call = dict(text=text, title=title, doc_type=doc_type)
         return ("new-doc", 3)
+
+    async def ingest_pptx(self, data, *, title=None, metadata=None, doc_id=None):
+        if self._pptx_error:
+            raise ValueError("bad pptx")
+        self.pptx_call = dict(nbytes=len(data), title=title)
+        return ("deck-doc", 5)
 
 
 def _user():
@@ -126,3 +134,38 @@ async def test_ingest_forbidden_for_user(app):
         r = await c.post("/ingest", json={"text": "x", "doc_type": "prose"},
                          headers={"Authorization": "Bearer x"})
     assert r.status_code == 403
+
+
+async def test_ingest_pptx_admin_ok(app):
+    app.dependency_overrides[get_current_user] = _admin
+    files = {"file": ("deck.pptx", b"PK\x03\x04fake-bytes", "application/vnd.ms-powerpoint")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/pptx", files=files, data={"title": "Deck"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert r.json() == {"doc_id": "deck-doc", "chunks_ingested": 5}
+    assert app.state.ingest.pptx_call["title"] == "Deck"
+
+
+async def test_ingest_pptx_forbidden_for_user(app):
+    app.dependency_overrides[get_current_user] = _user
+    files = {"file": ("deck.pptx", b"x", "application/octet-stream")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/pptx", files=files, headers={"Authorization": "Bearer x"})
+    assert r.status_code == 403
+
+
+async def test_ingest_pptx_bad_file_422(app):
+    app.dependency_overrides[get_current_user] = _admin
+    app.state.ingest = FakeIngest(pptx_error=True)
+    files = {"file": ("deck.pptx", b"not-a-pptx", "application/octet-stream")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/pptx", files=files, headers={"Authorization": "Bearer x"})
+    assert r.status_code == 422
+
+
+async def test_health_open(app):
+    async with await _client(app) as c:
+        r = await c.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
