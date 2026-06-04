@@ -28,7 +28,13 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   chunking (slides `.pptx` / prose via spaCy / token); documents toggle on/off.
 - **Session lifecycle**: 10-min hot-cache TTL; a worker **idle-sweeper** finalises
   ended sessions into tier-2 summary + tier-3 facts so short chats still persist.
+  The web conversation list is **isolated per account** and capped at **20**
+  (oldest-evicted, warned); deleting one cascades the backend session + messages.
 - **Auth**: JWT bearer; first registered account is admin; admin gates RAG management.
+- **Admin system prompt**: a global, admin-editable agent persona (empty ⇒ `.env`
+  default), injected fresh each turn.
+- **Feedback loop**: per-reply **👍/👎** for all users (toggle/cancelable), with an
+  admin summary view.
 - **Tools**: extensible tool-calling loop; `web_search` (Brave) when keyed.
 - **Discord** adapter with live reaction status; **CLI** for local testing.
 
@@ -83,6 +89,11 @@ cp .env.example .env                            # set a provider key + JWT_SECRE
 docker compose --profile app up -d --build      # migrate -> worker + api + frontend
 # open the console at http://localhost:8080  (API also on :8753 for curl/debug)
 ```
+
+In Docker the SPA and API share one origin: nginx serves the SPA and
+reverse-proxies the API under **`/api/`** (the frontend is built with
+`VITE_API_BASE_URL=/api`), so SPA routes like `/admin/system-prompt` never collide
+with same-named API paths.
 
 `docker compose up -d` (no profile) still starts **only** redis/postgres/qdrant for
 local dev. Inside the network the stores are reached by service name, so the

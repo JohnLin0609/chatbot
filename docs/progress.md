@@ -47,8 +47,19 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
   adapter), `interfaces/discord_app.py` (Discord bot).
 - **Frontend**: `frontend/` (React + Vite SPA, `npm run dev` on 5173) — consumes
   the API via JWT bearer; build to static `dist/`.
-- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
+- **Stores**: Redis (streams + hot), Postgres (`sessions`/`messages`/`summaries`/`user_memory`/`documents`/`users`/`app_settings`/`message_feedback`), Qdrant (`knowledge` collection — named dense + BM25 sparse vectors).
 - **LLM**: configured for OpenAI `gpt-5.4-mini` in local `.env`.
+- **Per-user sessions**: the web conversation list is scoped per account
+  (localStorage `cc_conversations_<id>`), capped at 20 (oldest-evicted, warned);
+  deleting/evicting calls `DELETE /sessions/{conversation_id}` which cascades the
+  backend session + messages + summaries + feedback.
+- **Admin system prompt**: global agent persona in `app_settings` (admin page +
+  `GET/PUT /admin/system-prompt`), injected per turn (empty ⇒ `.env` default).
+- **User feedback (👍/👎)**: `message_feedback` (one rating per message+user,
+  toggle/cancelable); `/chat` returns `reply_message_id`;
+  `POST /messages/{id}/feedback` + admin summary (`GET /admin/feedback/summary`).
+- **Docker**: full stack via `docker compose --profile app up -d` (nginx serves the
+  SPA and reverse-proxies the API under `/api/`; console on :8080).
 
 ## Test inventory
 
@@ -70,6 +81,9 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_classifier.py`, `test_retriever.py`, `test_adaptive_rag.py`, `test_reranker.py` | Adaptive-RAG: classifier tiers, hybrid retrieve, routing (simple/medium/complex), rerank ordering + gate |
 | `test_auth_security.py`, `test_user_store.py` | bcrypt hash/verify; JWT encode/decode; first-user-admin, duplicate, authenticate |
 | `test_api_auth.py`, `test_api_chat.py`, `test_api_admin.py` | API: register/login/me; `/chat` 401-vs-authed + identity flow; admin 403-vs-200 (httpx ASGITransport + dep overrides) |
+| `test_api_features.py` | `/chat` reply_message_id; `DELETE /sessions/{cid}` (auth + structural ownership); `GET/PUT /admin/system-prompt` + reset (admin-gated); `POST /messages/{id}/feedback` toggle; `GET /admin/feedback/summary` (admin-gated) |
+| `test_feedback.py`, `test_repository.py` (extended) | feedback insert/toggle/flip + summary; session cascade-delete (+ feedback) + app-setting KV CRUD |
+| `test_context_builder.py` (extended) | system-prompt override wins; None/empty falls back to the default |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
 | `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
@@ -83,10 +97,12 @@ Unit tests use **fakeredis**, in-memory **SQLite (StaticPool)**, and **FakeChat*
 fakes — no network or Docker needed. (See [decisions.md](decisions.md) on why
 SQLite/fakeredis are test-only.)
 
-**Frontend** (`frontend/`, Vitest + React Testing Library, 16 tests): API client
+**Frontend** (`frontend/`, Vitest + React Testing Library, 23 tests): API client
 (Bearer / 401), auth context, route guards (protected + admin), ChunkInspector
-& MessageBubble render, conversation storage. Plus a manual **browser e2e**
-(register→admin→upload→inspect chunks→RAG chat) verified with Playwright.
+& MessageBubble render (incl. 👍/👎 controls), conversation storage (per-user
+isolation, 20-cap eviction, rating toggle). Plus **browser e2e** via Playwright:
+register→admin→upload→inspect chunks→RAG chat, and (latest) per-user session
+isolation across account switches, feedback, and the system-prompt override.
 
 ## Verified live (OpenAI gpt-5.4-mini)
 

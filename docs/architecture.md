@@ -182,8 +182,14 @@ separate chat + admin apps) — the surface the Phase-3 SPA drives:
 - `POST /auth/register` (first account → `admin`, rest → `user`), `POST /auth/login`
   → a bearer **access token** (pyjwt, HS256); `GET /auth/me`.
 - `POST /chat` requires a user; the authenticated id becomes the inbound
-  `user_id` (`platform="web"`), so tier-3 memory ties to the account.
-- `/documents*` and `/ingest*` require `admin` (`core/auth/deps.require_admin`).
+  `user_id` (`platform="web"`), so tier-3 memory ties to the account. The response
+  carries `reply_message_id` (the persisted assistant message) so it can be rated.
+- `DELETE /sessions/{conversation_id}` (any user) cascade-deletes the caller's own
+  session + messages + summaries + feedback (ownership is structural via the
+  `web:<userId>:<conv>` key).
+- `POST /messages/{id}/feedback` (any user) records a toggle/cancelable 👍/👎.
+- `/documents*`, `/ingest*`, `/admin/system-prompt` (GET/PUT global persona), and
+  `/admin/feedback/summary` require `admin` (`core/auth/deps.require_admin`).
 
 Passwords are bcrypt-hashed (`core/auth/security.py`); accounts live in the
 Postgres `users` table (`core/auth/store.py`). The CLI/Discord adapters are
@@ -193,9 +199,12 @@ publish to the streams directly; only the HTTP API enforces auth.
 ## Frontend
 
 The **Phase-3 SPA** (`frontend/`, React + Vite + TS + Tailwind) consumes this API
-over JWT bearer: login/register, a chat tester, and an admin console (upload
-text/`.pptx`, document enable/disable, chunk inspector). It's fully decoupled —
-dev-served by Vite, built to static `dist/`; CORS is open.
+over JWT bearer: login/register, a chat tester (per-account conversation list in
+localStorage, capped at 20 with oldest-eviction; per-reply 👍/👎), and an admin
+console (upload text/`.pptx`, document enable/disable, chunk inspector, a global
+**System Prompt** editor, and a **feedback summary**). Dev-served by Vite; in
+Docker it's built to static `dist/` and served by nginx, which reverse-proxies the
+API under `/api/` (single origin, no CORS, no SPA-vs-API path collisions).
 
 ## Deferred (next phases)
 

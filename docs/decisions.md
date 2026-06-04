@@ -242,3 +242,33 @@ token-chunked, dense-only, tool-triggered RAG:
   messages" so the worker loop is stable.
 - qdrant-client ≥1.18 removed `search` → use `query_points` (and
   `check_compatibility=False` for minor client/server skew).
+
+## Per-user sessions, admin system prompt, feedback
+
+- **Conversation list scoped per user in localStorage** (`cc_conversations_<id>`).
+  It was a single global key, which leaked one account's chats to the next on a
+  shared browser. The list stays client-side (real cross-turn memory is already
+  server-side, keyed `web:<userId>:<conv>`); per-account keys give isolation
+  without a server round-trip.
+- **20-conversation cap, oldest-evicted, with a warning.** Bounds local storage and
+  matches the user's request; eviction (and explicit delete) calls
+  `DELETE /sessions/{conversation_id}`, which reconstructs the owner-scoped session
+  key (ownership is structural — a user can only address keys under their own id)
+  and cascade-deletes the session + messages + summaries; feedback rows are removed
+  first since they FK message ids and aren't in the ORM relationship cascade.
+- **Global, DB-backed system prompt** (`app_settings` KV, key `system_prompt`).
+  Admin-editable persona applied to every conversation, resolved per turn in the
+  pipeline (`build_context(system_prompt=…)`); empty clears the override and falls
+  back to the `.env` default, so "reset" needs no separate flag. Global (not
+  per-user) per the interview; takes effect on the next turn (persona is
+  re-injected fresh each turn, so in-flight hot context/summaries are unaffected).
+- **Feedback is one rating per (message, user), toggle/cancelable.** Re-sending the
+  same rating clears it; the opposite flips it. To address a reply, `/chat` now
+  returns `reply_message_id` (plumbed through `OutboundEvent`); the assistant
+  message id is captured before `db.commit()` to avoid post-commit expiry IO.
+- **API namespaced under `/api/` in Docker.** nginx serves the SPA and
+  reverse-proxies `/api/*` to the API (stripping the prefix); the frontend is built
+  with `VITE_API_BASE_URL=/api`. This supersedes the earlier "proxy a fixed prefix
+  list" idea, which broke once an API path (`/admin/system-prompt`) collided with a
+  same-named SPA route — the same collision risk noted above for a FastAPI static
+  mount, resolved here by giving the API its own namespace.
