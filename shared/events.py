@@ -35,6 +35,7 @@ class OutboundEvent(BaseModel):
     correlation_id: str  # passed through verbatim from the inbound event
     reply_token: str | None = None
     text: str = ""
+    reply_message_id: int | None = None  # DB id of the persisted assistant reply
     status: str = "ok"  # "ok" | "error"
     error: str | None = None
     timestamp: float

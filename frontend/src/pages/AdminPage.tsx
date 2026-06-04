@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import * as api from "../api/client";
-import type { DocumentMeta } from "../api/types";
+import type { DocumentMeta, FeedbackSummary } from "../api/types";
 import NavBar from "../components/NavBar";
 import DocTable from "../components/DocTable";
 import UploadPanel from "../components/UploadPanel";
@@ -12,12 +12,18 @@ export default function AdminPage() {
   const [docs, setDocs] = useState<DocumentMeta[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackSummary | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setDocs(await api.listDocuments());
     } catch (e) {
       setError(errorMessage(e));
+    }
+    try {
+      setFeedback(await api.getFeedbackSummary());
+    } catch {
+      /* feedback panel is best-effort */
     }
   }, []);
 
@@ -42,6 +48,36 @@ export default function AdminPage() {
           <h2 className="mb-2 text-lg font-semibold">Upload knowledge</h2>
           <UploadPanel onDone={refresh} />
         </section>
+
+        {feedback && (
+          <section>
+            <h2 className="mb-2 text-lg font-semibold">User feedback</h2>
+            <div className="mb-2 flex gap-4 text-sm">
+              <span className="rounded bg-green-50 px-3 py-1 text-green-700">
+                👍 {feedback.up}
+              </span>
+              <span className="rounded bg-red-50 px-3 py-1 text-red-700">
+                👎 {feedback.down}
+              </span>
+            </div>
+            {feedback.recent_negative.length > 0 && (
+              <div>
+                <p className="mb-1 text-sm text-gray-500">Recent 👎 replies</p>
+                <ul className="space-y-1 text-sm">
+                  {feedback.recent_negative.map((n) => (
+                    <li
+                      key={n.message_id}
+                      className="truncate rounded border bg-white px-3 py-1.5 text-gray-700"
+                      title={n.content}
+                    >
+                      {n.content}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
 
         <section>
           <h2 className="mb-2 text-lg font-semibold">Documents</h2>

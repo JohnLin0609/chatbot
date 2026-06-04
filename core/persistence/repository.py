@@ -5,10 +5,17 @@ commit — the caller owns the transaction boundary so a turn's user+assistant
 rows land atomically.
 """
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.persistence.models import Message, Session, Summary, UserMemory
+from core.persistence.models import (
+    AppSetting,
+    Message,
+    MessageFeedback,
+    Session,
+    Summary,
+    UserMemory,
+)
 
 
 async def ensure_session(
@@ -127,6 +134,53 @@ async def idle_unfinalized_sessions(
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+async def delete_session_by_key(db: AsyncSession, session_key: str) -> bool:
+    """Delete a session and all its messages/summaries/feedback. Returns True if a
+    session existed. Feedback rows are removed first (they FK message ids and aren't
+    covered by the ORM relationship cascade); the session's messages+summaries go via
+    the Session relationship cascade ("all, delete-orphan")."""
+    result = await db.execute(
+        select(Session).where(Session.session_key == session_key)
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        return False
+    msg_ids = (
+        await db.execute(
+            select(Message.id).where(Message.session_id == session.id)
+        )
+    ).scalars().all()
+    if msg_ids:
+        await db.execute(
+            delete(MessageFeedback).where(MessageFeedback.message_id.in_(msg_ids))
+        )
+    await db.delete(session)
+    await db.flush()
+    return True
+
+
+# ------------------------------------------------------------- app settings (KV)
+async def get_app_setting(db: AsyncSession, key: str) -> str | None:
+    row = await db.get(AppSetting, key)
+    return row.value if row else None
+
+
+async def upsert_app_setting(db: AsyncSession, key: str, value: str) -> None:
+    row = await db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=value))
+    else:
+        row.value = value
+    await db.flush()
+
+
+async def delete_app_setting(db: AsyncSession, key: str) -> None:
+    row = await db.get(AppSetting, key)
+    if row is not None:
+        await db.delete(row)
+        await db.flush()
 
 
 async def get_latest_summary(db: AsyncSession, session_id: int) -> Summary | None:

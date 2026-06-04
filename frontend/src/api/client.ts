@@ -2,7 +2,9 @@ import type {
   ChatResponse,
   Chunk,
   DocumentMeta,
+  FeedbackSummary,
   IngestResult,
+  SystemPrompt,
   TokenResponse,
   User,
 } from "./types";
@@ -126,3 +128,25 @@ export const ingestPptx = (file: File, title: string) => {
   if (title) form.append("title", title);
   return apiFetch<IngestResult>("/ingest/pptx", { method: "POST", form });
 };
+
+export const deleteSession = (conversationId: string) =>
+  apiFetch<void>(`/sessions/${encodeURIComponent(conversationId)}`, {
+    method: "DELETE",
+  });
+
+export const sendFeedback = (messageId: number, rating: number) =>
+  apiFetch<{ message_id: number; rating: number }>(
+    `/messages/${messageId}/feedback`,
+    { method: "POST", body: { rating } },
+  );
+
+export const getSystemPrompt = () => apiFetch<SystemPrompt>("/admin/system-prompt");
+
+export const setSystemPrompt = (prompt: string) =>
+  apiFetch<SystemPrompt>("/admin/system-prompt", {
+    method: "PUT",
+    body: { prompt },
+  });
+
+export const getFeedbackSummary = () =>
+  apiFetch<FeedbackSummary>("/admin/feedback/summary");

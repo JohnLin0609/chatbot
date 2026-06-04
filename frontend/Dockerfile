@@ -8,7 +8,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-ENV VITE_API_BASE_URL=""
+# API is served same-origin under /api/ (nginx reverse-proxies + strips the prefix).
+ENV VITE_API_BASE_URL="/api"
 RUN npm run build
 
 # ---- serve stage ----

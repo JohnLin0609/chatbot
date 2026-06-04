@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ChatPage from "./pages/ChatPage";
 import AdminPage from "./pages/AdminPage";
+import SystemPromptPage from "./pages/SystemPromptPage";
 
 export default function App() {
   const { loading } = useAuth();
@@ -33,6 +34,14 @@ export default function App() {
         element={
           <AdminRoute>
             <AdminPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/system-prompt"
+        element={
+          <AdminRoute>
+            <SystemPromptPage />
           </AdminRoute>
         }
       />

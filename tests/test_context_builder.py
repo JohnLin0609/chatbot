@@ -39,3 +39,22 @@ def test_omits_empty_blocks():
     systems = [m["content"] for m in msgs if m["role"] == "system"]
     assert not any("Channel summary" in s for s in systems)
     assert any("current speaker" in s for s in systems)
+
+
+def test_system_prompt_override_wins():
+    msgs = build_context(
+        make_settings(system_prompt="DEFAULT"),
+        channel_summary_text="", personal_memory_text="",
+        window_turns=[], user_text="hi", system_prompt="PIRATE MODE",
+    )
+    assert msgs[0] == {"role": "system", "content": "PIRATE MODE"}
+
+
+def test_system_prompt_none_or_empty_falls_back():
+    for override in (None, ""):
+        msgs = build_context(
+            make_settings(system_prompt="DEFAULT"),
+            channel_summary_text="", personal_memory_text="",
+            window_turns=[], user_text="hi", system_prompt=override,
+        )
+        assert msgs[0]["content"] == "DEFAULT"

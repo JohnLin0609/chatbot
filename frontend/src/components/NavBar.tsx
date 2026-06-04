@@ -26,6 +26,8 @@ export default function NavBar() {
         <nav className="flex gap-1">
           {navLink("/", "Chat")}
           {user?.role === "admin" && navLink("/admin", "Admin")}
+          {user?.role === "admin" &&
+            navLink("/admin/system-prompt", "System Prompt")}
         </nav>
       </div>
       <div className="flex items-center gap-3 text-sm text-gray-500">

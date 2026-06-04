@@ -9,3 +9,6 @@ venv/
 frontend/node_modules/
 frontend/dist/
 frontend/.env
+
+# Playwright MCP run artifacts
+.playwright-mcp/

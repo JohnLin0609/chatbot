@@ -22,6 +22,9 @@ from core.auth.security import create_access_token
 from core.auth.store import DuplicateEmail, UserStore
 from core.config import get_settings
 from core.documents.store import DocumentStore
+from core.feedback.store import FeedbackStore
+from core.persistence import repository as repo
+from core.settings.store import SYSTEM_PROMPT_KEY, AppSettingStore
 from core.persistence.db import create_engine, create_sessionmaker
 from core.rag.embeddings import build_embedding_service
 from core.rag.ingest import IngestService
@@ -58,6 +61,15 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     reply: str
+    reply_message_id: int | None = None
+
+
+class SystemPromptRequest(BaseModel):
+    prompt: str = ""  # empty string => reset to the .env default
+
+
+class FeedbackRequest(BaseModel):
+    rating: int = Field(..., description="+1 (👍) or -1 (👎)")
 
 
 class IngestRequest(BaseModel):
@@ -81,6 +93,9 @@ def build_app(
     document_store=None,
     vector_store=None,
     ingest=None,
+    app_settings=None,
+    feedback=None,
+    sessionmaker=None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -101,6 +116,9 @@ def build_app(
             app.state.documents = document_store
             app.state.vector_store = vector_store
             app.state.ingest = ingest
+            app.state.app_settings = app_settings
+            app.state.feedback = feedback
+            app.state.sessionmaker = sessionmaker
         else:
             sm = create_sessionmaker(create_engine(settings.postgres_dsn))
             store = QdrantVectorStore(
@@ -117,6 +135,9 @@ def build_app(
                 TokenCounter(settings.tiktoken_encoding), documents,
                 build_sparse_embedder(settings),
             )
+            app.state.app_settings = AppSettingStore(sm)
+            app.state.feedback = FeedbackStore(sm)
+            app.state.sessionmaker = sm
         try:
             yield
         finally:
@@ -184,7 +205,35 @@ def build_app(
             raise HTTPException(status_code=504, detail="Timed out waiting for reply")
         if event.status == "error":
             raise HTTPException(status_code=502, detail=f"LLM request failed: {event.error}")
-        return ChatResponse(session_id=inbound.session_id, reply=event.text)
+        return ChatResponse(
+            session_id=inbound.session_id,
+            reply=event.text,
+            reply_message_id=event.reply_message_id,
+        )
+
+    @app.delete("/sessions/{conversation_id}", status_code=204)
+    async def delete_session(
+        conversation_id: str, request: Request,
+        user: dict = Depends(get_current_user),
+    ) -> None:
+        # Ownership is structural: a user can only address keys under their own id.
+        session_key = make_session_id("web", f"{user['id']}:{conversation_id}")
+        async with request.app.state.sessionmaker() as db:
+            await repo.delete_session_by_key(db, session_key)
+            await db.commit()
+
+    # --------------------------------------------------- feedback (any user)
+    @app.post("/messages/{message_id}/feedback")
+    async def rate_message(
+        message_id: int, req: FeedbackRequest, request: Request,
+        user: dict = Depends(get_current_user),
+    ) -> dict:
+        if req.rating not in (-1, 1):
+            raise HTTPException(status_code=422, detail="rating must be +1 or -1")
+        state = await request.app.state.feedback.rate(
+            message_id, str(user["id"]), req.rating
+        )
+        return {"message_id": message_id, "rating": state}
 
     # ----------------------------------------------------- documents (admin)
     @app.post("/ingest")
@@ -238,6 +287,35 @@ def build_app(
             raise HTTPException(status_code=404, detail="document not found")
         await request.app.state.vector_store.set_payload(doc_id, {"enabled": req.enabled})
         return {"document": doc}
+
+    # ----------------------------------------------- system prompt (admin)
+    @app.get("/admin/system-prompt")
+    async def get_system_prompt(request: Request,
+                                _admin: dict = Depends(require_admin)) -> dict:
+        override = await request.app.state.app_settings.get(SYSTEM_PROMPT_KEY)
+        return {
+            "prompt": override if override is not None else settings.system_prompt,
+            "is_default": override is None,
+            "default": settings.system_prompt,
+        }
+
+    @app.put("/admin/system-prompt")
+    async def set_system_prompt(req: SystemPromptRequest, request: Request,
+                                _admin: dict = Depends(require_admin)) -> dict:
+        prompt = req.prompt.strip()
+        if prompt:
+            await request.app.state.app_settings.set(SYSTEM_PROMPT_KEY, prompt)
+            return {"prompt": prompt, "is_default": False, "default": settings.system_prompt}
+        # empty => clear the override, fall back to the .env default
+        await request.app.state.app_settings.delete(SYSTEM_PROMPT_KEY)
+        return {"prompt": settings.system_prompt, "is_default": True,
+                "default": settings.system_prompt}
+
+    # ----------------------------------------------- feedback summary (admin)
+    @app.get("/admin/feedback/summary")
+    async def feedback_summary(request: Request,
+                               _admin: dict = Depends(require_admin)) -> dict:
+        return await request.app.state.feedback.summary()
 
     return app
 

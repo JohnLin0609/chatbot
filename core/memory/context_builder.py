@@ -15,8 +15,12 @@ def build_context(
     window_turns: list[dict],
     user_text: str,
     knowledge_text: str = "",
+    system_prompt: str | None = None,
 ) -> list[dict]:
-    messages: list[dict] = [{"role": "system", "content": settings.system_prompt}]
+    # `system_prompt` is the admin-set global persona override; falls back to the
+    # static settings default when unset (None or empty).
+    persona = system_prompt or settings.system_prompt
+    messages: list[dict] = [{"role": "system", "content": persona}]
 
     if channel_summary_text:
         messages.append(

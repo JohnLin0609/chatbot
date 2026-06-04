@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -128,6 +129,48 @@ class Document(Base):
     enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     source_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class AppSetting(Base):
+    """Generic key-value store for admin-editable runtime settings.
+    Currently holds key "system_prompt" (the global agent persona override)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class MessageFeedback(Base):
+    """A user's 👍/👎 on an assistant reply. One rating per (message, user)."""
+
+    __tablename__ = "message_feedback"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_feedback_message_user"),
+        CheckConstraint("rating IN (-1, 1)", name="ck_feedback_rating"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("messages.id"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # +1 👍 / -1 👎
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

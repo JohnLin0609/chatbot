@@ -14,6 +14,23 @@ export interface TokenResponse {
 export interface ChatResponse {
   session_id: string;
   reply: string;
+  reply_message_id?: number | null;
+}
+
+export interface SystemPrompt {
+  prompt: string;
+  is_default: boolean;
+  default: string;
+}
+
+export interface FeedbackSummary {
+  up: number;
+  down: number;
+  recent_negative: {
+    message_id: number;
+    content: string;
+    at: string | null;
+  }[];
 }
 
 export interface DocumentMeta {

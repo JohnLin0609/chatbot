@@ -82,6 +82,32 @@ async def test_reply_and_correlation_passthrough(redis, sessionmaker):
     assert out.correlation_id == "corr-hello"
 
 
+async def test_outbound_carries_reply_message_id(redis, sessionmaker):
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    out = await handle_inbound(_inbound("hi"), _deps(s, redis, sessionmaker, FakeChat()))
+    assert out.reply_message_id is not None
+    async with sessionmaker() as db:
+        row = (await db.execute(
+            select(Message).where(Message.role == "assistant")
+        )).scalar_one()
+    assert out.reply_message_id == row.id  # points at the persisted assistant reply
+
+
+async def test_admin_system_prompt_override_applied(redis, sessionmaker):
+    from core.persistence import repository as repo
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000,
+                      system_prompt="DEFAULT PERSONA")
+    chat = FakeChat()
+    deps = _deps(s, redis, sessionmaker, chat)
+    async with sessionmaker() as db:
+        await repo.upsert_app_setting(db, "system_prompt", "PIRATE MODE")
+        await db.commit()
+    await handle_inbound(_inbound("ahoy"), deps)
+    main_call = [c for c in chat.calls if c[-1]["content"] == "ahoy"][-1]
+    assert main_call[0] == {"role": "system", "content": "PIRATE MODE"}
+
+
 async def test_persists_messages(redis, sessionmaker):
     s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
     await handle_inbound(_inbound("hi"), _deps(s, redis, sessionmaker, FakeChat()))

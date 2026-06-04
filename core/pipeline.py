@@ -63,7 +63,7 @@ class PipelineDeps:
 
 
 def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
-              error: str | None = None) -> OutboundEvent:
+              error: str | None = None, reply_message_id: int | None = None) -> OutboundEvent:
     return OutboundEvent(
         event_id=str(uuid.uuid4()),
         in_reply_to=inbound.event_id,
@@ -73,6 +73,7 @@ def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
         correlation_id=inbound.correlation_id,
         reply_token=inbound.reply_token,
         text=text,
+        reply_message_id=reply_message_id,
         status=status,
         error=error,
         timestamp=time.time(),
@@ -152,6 +153,8 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
         personal_text, used_keys = render_personal_memory(user_doc, counter, settings)
         # tier-4: Adaptive-RAG — classify, retrieve (+rerank), inject knowledge.
         knowledge_text = await _retrieve_knowledge(deps, inbound.text)
+        # admin-set global persona override (None/empty -> settings default).
+        system_prompt = await repo.get_app_setting(db, "system_prompt")
         messages = build_context(
             settings,
             channel_summary_text=channel_text,
@@ -159,6 +162,7 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             window_turns=window_turns,
             user_text=inbound.text,
             knowledge_text=knowledge_text,
+            system_prompt=system_prompt,
         )
 
         # Main reply runs through the tool-calling loop (the model may call
@@ -187,7 +191,11 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             db, session_row.id, "user", inbound.text,
             platform_message_id=inbound.message_id, user_id=inbound.user_id,
         )
-        await repo.append_message(db, session_row.id, "assistant", reply)
+        assistant_msg = await repo.append_message(
+            db, session_row.id, "assistant", reply
+        )
+        # Capture the id now; reading it after db.commit() would trigger expiry IO.
+        reply_message_id = assistant_msg.id
 
         # --- tier-2: fold any window overflow into the channel summary ---
         summary, turns = await hot.load(session_key)
@@ -219,7 +227,7 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
 
         await db.commit()
 
-    return _outbound(inbound, text=reply, status="ok")
+    return _outbound(inbound, text=reply, status="ok", reply_message_id=reply_message_id)
 
 
 async def _maybe_extract_facts(deps, db, user_key: str, user_id: str) -> None:
