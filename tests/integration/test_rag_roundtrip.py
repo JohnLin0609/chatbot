@@ -33,10 +33,11 @@ async def test_ingest_then_search():
 
     ingest = IngestService(settings, embedding, store, TokenCounter(settings.tiktoken_encoding))
     try:
-        doc_id, n = await ingest.ingest(
+        doc_id, n = await ingest.ingest_text(
+            "Customers can request a refund within 30 days of purchase. "
+            "Refunds are processed back to the original payment method.",
             title="Refund Policy",
-            text="Customers can request a refund within 30 days of purchase. "
-                 "Refunds are processed back to the original payment method.",
+            doc_type="token",
         )
         assert n >= 1
 

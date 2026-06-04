@@ -13,3 +13,7 @@ tiktoken
 qdrant-client
 httpx
 discord.py
+python-multipart
+python-pptx
+jieba
+spacy

@@ -22,6 +22,7 @@ class VectorPoint:
     user_key: str | None = None
     channel_id: str | None = None
     created_at: str | None = None
+    enabled: bool = True
 
     def point_id(self) -> str:
         return str(uuid.uuid5(_POINT_NS, f"{self.doc_id}:{self.chunk_index}"))
@@ -37,6 +38,7 @@ class VectorPoint:
             "user_key": self.user_key,
             "channel_id": self.channel_id,
             "created_at": self.created_at,
+            "enabled": self.enabled,
         }
 
 
@@ -87,6 +89,36 @@ class QdrantVectorStore:
                 for p in points
             ],
         )
+
+    async def set_payload(self, doc_id: str, payload: dict) -> None:
+        """Patch payload on all points of a doc (e.g. flip `enabled`)."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        await self._client.set_payload(
+            collection_name=self._collection,
+            payload=payload,
+            points=Filter(
+                must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
+            ),
+        )
+
+    async def scroll_doc(self, doc_id: str) -> list[dict]:
+        """Return a doc's chunks (payloads) ordered by chunk_index — for the
+        chunk-inspection / visualiser API."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        points, _ = await self._client.scroll(
+            collection_name=self._collection,
+            scroll_filter=Filter(
+                must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
+            ),
+            limit=10000,
+            with_payload=True,
+            with_vectors=False,
+        )
+        payloads = [p.payload or {} for p in points]
+        payloads.sort(key=lambda pl: pl.get("chunk_index", 0))
+        return payloads
 
     async def search(
         self,

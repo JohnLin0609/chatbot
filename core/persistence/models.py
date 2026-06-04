@@ -96,6 +96,29 @@ class Summary(Base):
     session: Mapped[Session] = relationship(back_populates="summaries")
 
 
+class Document(Base):
+    """Registry of curated RAG documents. Source of truth for the doc list / UI;
+    chunks live in Qdrant. `enabled` gates retrieval (mirrored to Qdrant payload)."""
+
+    __tablename__ = "documents"
+
+    doc_id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    doc_type: Mapped[str] = mapped_column(String, nullable=False, default="prose")
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class UserMemory(Base):
     """Per-user durable memory document (tier-3), keyed platform:user_id."""
 

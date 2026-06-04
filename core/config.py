@@ -129,13 +129,35 @@ class Settings(BaseSettings):
     embedding_dim: int = 1536
     embedding_batch_size: int = 64
 
-    # RAG retrieval (used by the search_knowledge tool).
+    # RAG retrieval.
     rag_top_k: int = 5
     rag_score_threshold: float = 0.0  # 0 = no threshold; tune after observing scores
 
     # Curated-document ingestion chunking.
     ingest_chunk_tokens: int = 512
     ingest_chunk_overlap: int = 64
+    # Per-type chunking (Phase 1): default strategy + spaCy sentence-grouping params.
+    default_chunk_strategy: str = "prose"  # prose | slides | token
+    spacy_model: str = "xx_sent_ud_sm"  # multilingual sentence segmentation
+    chunk_sentence_overlap: int = 1  # sentences carried between prose chunks
+
+    # Hybrid (dense + BM25 sparse) retrieval.
+    rag_sparse_enabled: bool = True
+    rag_sparse_vector_name: str = "text-sparse"
+    rag_prefetch_limit: int = 50  # candidates per branch before RRF fusion
+    rag_fusion: str = "rrf"
+
+    # Adaptive-RAG routing (front LLM classifier).
+    adaptive_classifier_enabled: bool = True
+    adaptive_classifier_model: str = ""  # "" = main chat model
+    rag_medium_top_k: int = 3
+    rag_complex_candidates: int = 20  # fused top-N fed to the reranker
+    rag_complex_top_k: int = 3
+
+    # Rerank (complex tier only) — local Qwen3-Reranker.
+    rag_reranker_enabled: bool = True
+    rag_reranker_model: str = "Qwen/Qwen3-Reranker-0.6B"
+    rag_reranker_device: str = "auto"
 
     # ------------------------------------------------------------- Tools
     enable_tools: bool = True
