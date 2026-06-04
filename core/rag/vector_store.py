@@ -9,6 +9,11 @@ logger = logging.getLogger("rag.vector_store")
 # Stable namespace so (doc_id, chunk_index) -> deterministic point id.
 _POINT_NS = uuid.UUID("a3f1c2d4-0000-4000-8000-000000000001")
 
+
+def chunk_point_id(doc_id, chunk_index) -> str:
+    """Deterministic point id for a chunk — same scheme as VectorPoint.point_id."""
+    return str(uuid.uuid5(_POINT_NS, f"{doc_id}:{chunk_index}"))
+
 # Named dense vector in the collection (sparse name comes from settings).
 DENSE = "dense"
 
@@ -29,7 +34,7 @@ class VectorPoint:
     sparse: dict | None = None  # {"indices": [...], "values": [...]} when hybrid
 
     def point_id(self) -> str:
-        return str(uuid.uuid5(_POINT_NS, f"{self.doc_id}:{self.chunk_index}"))
+        return chunk_point_id(self.doc_id, self.chunk_index)
 
     def payload(self) -> dict:
         return {
@@ -49,9 +54,10 @@ class VectorPoint:
 @dataclass
 class Hit:
     text: str
-    score: float
+    score: float  # fused RRF score from Qdrant (dense+sparse combined)
     title: str | None
     payload: dict
+    rerank_score: float | None = None  # set by the reranker (complex tier)
 
 
 class QdrantVectorStore:

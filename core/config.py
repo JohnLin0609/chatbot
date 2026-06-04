@@ -113,6 +113,15 @@ class Settings(BaseSettings):
     session_sweep_interval_seconds: int = 60
     session_sweep_batch: int = 50
 
+    # ------------------------------------------------------ Eval logging
+    # Persist the full context of each LLM call for offline analysis (retrieval +
+    # generation metrics, future LLM-as-judge). All writes are best-effort/async.
+    eval_logging_enabled: bool = True
+    # When False, store metadata + token counts but null the message/reply/chunk
+    # bodies (privacy / size escape hatch).
+    eval_log_message_bodies: bool = True
+    eval_chunk_text_max: int = 2000  # truncate stored chunk text
+
     # ----------------------------------------------- Tier-2 channel summary
     # Turns overflowing the window are folded into a short per-channel summary.
     channel_summary_token_cap: int = 150

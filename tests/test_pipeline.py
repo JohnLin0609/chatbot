@@ -1,5 +1,6 @@
 """End-to-end core pipeline tests (fakeredis + sqlite + fake LLM)."""
 
+import asyncio
 import json
 import time
 import uuid
@@ -249,6 +250,72 @@ async def test_medium_query_injects_retrieved_knowledge(redis, sessionmaker):
     injected = [m for call in chat.calls for m in call
                 if m["role"] == "system" and "Refunds within 30 days." in m["content"]]
     assert injected, "retrieved knowledge was not injected into the prompt"
+
+
+async def test_eval_trace_logged_with_retrieved_chunks(redis, sessionmaker):
+    """A RAG turn writes an eval_trace + one eval_retrieved_chunk (included)."""
+    from core.eval.logger import EvalLogger
+    from core.persistence.models import EvalRetrievedChunk, EvalTrace
+    from core.rag.classifier import MEDIUM
+    from core.rag.vector_store import Hit
+    from core.tokens.counter import TokenCounter
+
+    class FakeClassifier:
+        async def classify(self, q):
+            return MEDIUM
+
+    class FakeRetriever:
+        async def retrieve(self, q, *, top_k):
+            return [Hit(text="Refunds within 30 days.", score=0.9, title="Policy",
+                        payload={"doc_id": "d1", "chunk_index": 0})][:top_k]
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    deps = _deps(s, redis, sessionmaker, FakeChat())
+    deps.classifier = FakeClassifier()
+    deps.retriever = FakeRetriever()
+    deps.eval_logger = EvalLogger(sessionmaker, TokenCounter(s.tiktoken_encoding), s)
+
+    await handle_inbound(_inbound("how do refunds work?"), deps)
+    await asyncio.sleep(0.1)  # let the fire-and-forget log_trace task finish
+
+    async with sessionmaker() as db:
+        trace = (await db.execute(select(EvalTrace))).scalar_one()
+        chunks = (await db.execute(select(EvalRetrievedChunk))).scalars().all()
+    assert trace.rag_tier == MEDIUM
+    assert trace.query == "how do refunds work?"
+    assert trace.reply_text == "reply-to:how do refunds work?"
+    assert trace.messages is not None and trace.prompt_tokens
+    assert len(chunks) == 1
+    assert chunks[0].doc_id == "d1" and chunks[0].included is True
+
+
+async def test_eval_trace_simple_tier_no_chunks(redis, sessionmaker):
+    from core.eval.logger import EvalLogger
+    from core.persistence.models import EvalRetrievedChunk, EvalTrace
+    from core.rag.classifier import SIMPLE
+    from core.tokens.counter import TokenCounter
+
+    class FakeClassifier:
+        async def classify(self, q):
+            return SIMPLE
+
+    class FakeRetriever:
+        async def retrieve(self, q, *, top_k):
+            raise AssertionError("simple tier must not retrieve")
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    deps = _deps(s, redis, sessionmaker, FakeChat())
+    deps.classifier = FakeClassifier()
+    deps.retriever = FakeRetriever()
+    deps.eval_logger = EvalLogger(sessionmaker, TokenCounter(s.tiktoken_encoding), s)
+
+    await handle_inbound(_inbound("hi there"), deps)
+    await asyncio.sleep(0.1)
+
+    async with sessionmaker() as db:
+        trace = (await db.execute(select(EvalTrace))).scalar_one()
+        chunks = (await db.execute(select(EvalRetrievedChunk))).scalars().all()
+    assert trace.rag_tier == SIMPLE and chunks == []
 
 
 async def test_simple_query_injects_nothing(redis, sessionmaker):

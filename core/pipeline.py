@@ -12,11 +12,13 @@ import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from core.config import Settings
+from core.eval.logger import NullEvalLogger
+from core.eval.schemas import CandidateRecord, RetrievalTrace
 from core.facts.extractor import FactExtractor
 from core.facts.renderer import render_channel_summary, render_personal_memory
 from core.facts.store import UserMemoryStore
@@ -29,7 +31,7 @@ from core.rag.classifier import COMPLEX, SIMPLE, QueryClassifier
 from core.rag.embeddings import EmbeddingService
 from core.rag.reranker import Reranker
 from core.rag.retriever import RagRetriever
-from core.rag.vector_store import QdrantVectorStore
+from core.rag.vector_store import QdrantVectorStore, chunk_point_id
 from core.summary.summarizer import Summarizer
 from core.tokens.counter import TokenCounter
 from core.tools.loop import ToolRunner
@@ -60,6 +62,8 @@ class PipelineDeps:
     classifier: QueryClassifier | None = None
     retriever: RagRetriever | None = None
     reranker: Reranker | None = None
+    # Eval logging (defaults to a no-op so the pipeline is unconditional).
+    eval_logger: "NullEvalLogger | object" = field(default_factory=NullEvalLogger)
 
 
 def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
@@ -88,31 +92,70 @@ def _format_knowledge(hits) -> str:
     return "\n".join(lines)
 
 
-async def _retrieve_knowledge(deps: "PipelineDeps", query: str) -> str:
+def _candidate(hit, fused_rank: int) -> "CandidateRecord":
+    p = hit.payload or {}
+    doc_id = p.get("doc_id")
+    chunk_index = p.get("chunk_index")
+    return CandidateRecord(
+        doc_id=doc_id,
+        chunk_index=chunk_index,
+        point_id=chunk_point_id(doc_id, chunk_index) if doc_id is not None else None,
+        title=hit.title,
+        chunk_text=hit.text,
+        fused_score=hit.score,
+        fused_rank=fused_rank,
+        rerank_score=getattr(hit, "rerank_score", None),
+    )
+
+
+async def _retrieve_knowledge(
+    deps: "PipelineDeps", query: str
+) -> tuple[str, "RetrievalTrace | None"]:
     """Adaptive-RAG: classify the query, then retrieve (and optionally rerank)
-    curated knowledge. Returns a formatted block to inject, or "" for simple
-    queries / when retrieval is not wired. Best-effort — never raises."""
+    curated knowledge. Returns (formatted block to inject, RetrievalTrace). The
+    block is "" for simple queries / when retrieval is not wired; the trace
+    captures every candidate + scores/ranks + final disposition for eval logging.
+    Best-effort — never raises."""
     if not (deps.classifier and deps.retriever):
-        return ""
+        return "", None
     settings = deps.settings
     try:
         tier = await deps.classifier.classify(query)
         if tier == SIMPLE:
-            return ""
+            return "", RetrievalTrace(tier=SIMPLE, reranked=False, candidates=[])
+
         if tier == COMPLEX:
-            hits = await deps.retriever.retrieve(
+            candidates = await deps.retriever.retrieve(
                 query, top_k=settings.rag_complex_candidates
             )
-            if deps.reranker is not None:
-                hits = await deps.reranker.rerank(query, hits, settings.rag_complex_top_k)
+            reranked = deps.reranker is not None
+            if reranked:
+                final = await deps.reranker.rerank(
+                    query, list(candidates), settings.rag_complex_top_k
+                )
             else:
-                hits = hits[: settings.rag_complex_top_k]
+                final = candidates[: settings.rag_complex_top_k]
         else:  # medium
-            hits = await deps.retriever.retrieve(query, top_k=settings.rag_medium_top_k)
-        return _format_knowledge(hits)
+            candidates = await deps.retriever.retrieve(
+                query, top_k=settings.rag_medium_top_k
+            )
+            reranked = False
+            final = candidates
+
+        # Build the trace: every candidate (fused rank by retrieval order), with
+        # included/final_rank set for those that entered the injected top-k.
+        recs = [_candidate(h, i) for i, h in enumerate(candidates)]
+        final_ids = {id(h): r for r, h in enumerate(final)}
+        for rec, h in zip(recs, candidates):
+            if id(h) in final_ids:
+                rec.included = True
+                rec.final_rank = final_ids[id(h)]
+                rec.rerank_score = getattr(h, "rerank_score", None)
+        trace = RetrievalTrace(tier=tier, reranked=reranked, candidates=recs)
+        return _format_knowledge(final), trace
     except Exception:  # noqa: BLE001 — retrieval must never break the reply
         log.warning("knowledge retrieval failed", exc_info=True)
-        return ""
+        return "", None
 
 
 async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundEvent:
@@ -152,7 +195,9 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
         )
         personal_text, used_keys = render_personal_memory(user_doc, counter, settings)
         # tier-4: Adaptive-RAG — classify, retrieve (+rerank), inject knowledge.
-        knowledge_text = await _retrieve_knowledge(deps, inbound.text)
+        _t_retr = time.perf_counter()
+        knowledge_text, retrieval_trace = await _retrieve_knowledge(deps, inbound.text)
+        retrieval_ms = (time.perf_counter() - _t_retr) * 1000
         # admin-set global persona override (None/empty -> settings default).
         system_prompt = await repo.get_app_setting(db, "system_prompt")
         messages = build_context(
@@ -179,11 +224,13 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             correlation_id=inbound.correlation_id,
             progress=deps.progress_emitter,
         )
+        _t_gen = time.perf_counter()
         try:
             reply = await deps.tool_runner.run(session_key, messages, tool_ctx)
         except ChatServiceError as exc:
             await db.rollback()
             return _outbound(inbound, status="error", error=str(exc))
+        generation_ms = (time.perf_counter() - _t_gen) * 1000
 
         # --- persist the turn (hot + durable) ---
         await hot.append_turn(session_key, inbound.text, reply, user_id=inbound.user_id)
@@ -194,8 +241,9 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
         assistant_msg = await repo.append_message(
             db, session_row.id, "assistant", reply
         )
-        # Capture the id now; reading it after db.commit() would trigger expiry IO.
+        # Capture ids now; reading them after db.commit() would trigger expiry IO.
         reply_message_id = assistant_msg.id
+        session_db_id = session_row.id
 
         # --- tier-2: fold any window overflow into the channel summary ---
         summary, turns = await hot.load(session_key)
@@ -226,6 +274,25 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
             await deps.user_memory_store.bump_last_used(db, user_key, used_keys)
 
         await db.commit()
+
+    # --- eval logging (best-effort, fire-and-forget) ---
+    asyncio.create_task(deps.eval_logger.log_trace(
+        event_id=inbound.event_id,
+        correlation_id=inbound.correlation_id,
+        session_db_id=session_db_id,
+        session_key=session_key,
+        user_id=inbound.user_id,
+        conversation_id=inbound.channel_id,
+        query=inbound.text,
+        retrieval=retrieval_trace,
+        system_prompt=system_prompt,
+        knowledge_text=knowledge_text,
+        messages=messages,
+        reply_text=reply,
+        reply_message_id=reply_message_id,
+        retrieval_latency_ms=retrieval_ms,
+        generation_latency_ms=generation_ms,
+    ))
 
     return _outbound(inbound, text=reply, status="ok", reply_message_id=reply_message_id)
 

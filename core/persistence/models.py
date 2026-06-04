@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -198,4 +199,154 @@ class UserMemory(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+# --------------------------------------------------------------- eval logging
+class LlmCall(Base):
+    """Lightweight telemetry for every LLM call (cost / latency / usage).
+    The main reply additionally gets a rich EvalTrace; internal calls
+    (classifier/summarizer/fact_extract/judge) only land here."""
+
+    __tablename__ = "llm_calls"
+    __table_args__ = (Index("ix_llm_calls_created", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    call_type: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ok: Mapped[bool] = mapped_column(default=True, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvalTrace(Base):
+    """Rich record of one main-reply turn: the full assembled context, the reply,
+    routing tier, token/latency telemetry. Parent of EvalRetrievedChunk."""
+
+    __tablename__ = "eval_traces"
+    __table_args__ = (
+        Index("ix_eval_traces_created", "created_at"),
+        Index("ix_eval_traces_session_key", "session_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    llm_call_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("llm_calls.id"), nullable=True
+    )
+    event_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    session_db_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("sessions.id"), nullable=True
+    )
+    session_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rag_tier: Mapped[str | None] = mapped_column(String, nullable=True)
+    reranked: Mapped[bool] = mapped_column(default=False, nullable=False)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    knowledge_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    messages: Mapped[dict | None] = mapped_column(JsonDoc, nullable=True)
+    reply_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reply_message_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("messages.id"), nullable=True
+    )
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    tool_calls_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retrieval_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    generation_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    chunks: Mapped[list["EvalRetrievedChunk"]] = relationship(
+        back_populates="trace", cascade="all, delete-orphan"
+    )
+
+
+class EvalRetrievedChunk(Base):
+    """One retrieved candidate for a trace, with its scores/ranks and whether it
+    made the final top-k injected into the prompt. Judge labels + golden-set
+    relevance join here on (doc_id, chunk_index)."""
+
+    __tablename__ = "eval_retrieved_chunks"
+    __table_args__ = (
+        Index("ix_eval_chunks_trace", "trace_id"),
+        Index("ix_eval_chunks_doc", "doc_id", "chunk_index"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    trace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("eval_traces.id"), nullable=False
+    )
+    doc_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    point_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    chunk_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fused_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fused_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rerank_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    final_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    included: Mapped[bool] = mapped_column(default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    trace: Mapped[EvalTrace] = relationship(back_populates="chunks")
+
+
+class EvalGoldenQuery(Base):
+    """Reserved for offline eval: a query with an optional reference answer.
+    Populated later; enables true Recall@k / Correctness."""
+
+    __tablename__ = "eval_golden_queries"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    reference_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    relevant_chunks: Mapped[list["EvalGoldenRelevantChunk"]] = relationship(
+        back_populates="golden_query", cascade="all, delete-orphan"
+    )
+
+
+class EvalGoldenRelevantChunk(Base):
+    """Reserved: a chunk known to be relevant to a golden query, with a graded
+    relevance label (e.g. 0–3) for NDCG / Recall@k."""
+
+    __tablename__ = "eval_golden_relevant_chunks"
+    __table_args__ = (
+        Index("ix_golden_rel_query", "golden_query_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    golden_query_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("eval_golden_queries.id"), nullable=False
+    )
+    doc_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    relevance: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    golden_query: Mapped[EvalGoldenQuery] = relationship(
+        back_populates="relevant_chunks"
     )

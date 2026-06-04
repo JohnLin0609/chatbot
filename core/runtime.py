@@ -3,6 +3,8 @@
 from redis.asyncio import Redis
 
 from core.config import Settings
+from core.eval.instrument import InstrumentedChatService
+from core.eval.logger import EvalLogger, NullEvalLogger
 from core.facts.extractor import FactExtractor
 from core.facts.store import UserMemoryStore
 from core.llm.factory import build_chat_service
@@ -28,10 +30,22 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
     sessionmaker = create_sessionmaker(engine)
     chat_service = build_chat_service(settings)
     hot_store = HotStore(redis, settings)
-    summarizer = Summarizer(settings, chat_service)
     counter = TokenCounter(settings.tiktoken_encoding)
     user_memory_store = UserMemoryStore(redis, settings)
-    fact_extractor = FactExtractor(settings, chat_service, counter)
+
+    # Eval logging: a no-op logger when disabled keeps the pipeline unconditional.
+    eval_logger = (
+        EvalLogger(sessionmaker, counter, settings)
+        if settings.eval_logging_enabled
+        else NullEvalLogger()
+    )
+
+    def instrument(call_type: str):
+        # Wrap the shared chat service so every call records lightweight telemetry.
+        return InstrumentedChatService(chat_service, eval_logger, call_type)
+
+    summarizer = Summarizer(settings, instrument("summarizer"))
+    fact_extractor = FactExtractor(settings, instrument("fact_extract"), counter)
 
     embedding_service = build_embedding_service(settings)
     vector_store = QdrantVectorStore(
@@ -41,12 +55,12 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
     web_search_service = build_web_search_service(settings)
     registry = ToolRegistry()
     register_default_tools(registry, settings)
-    tool_runner = ToolRunner(chat_service, registry, settings)
+    tool_runner = ToolRunner(instrument("main_reply"), registry, settings)
 
     # Adaptive-RAG: classifier routes; retriever does hybrid search; reranker is
     # the complex-tier cross-encoder (None if disabled/unavailable -> fused top-k).
     sparse_embedder = build_sparse_embedder(settings)
-    classifier = QueryClassifier(chat_service, settings)
+    classifier = QueryClassifier(instrument("classifier"), settings)
     retriever = RagRetriever(vector_store, embedding_service, sparse_embedder, settings)
     reranker = build_reranker(settings)
 
@@ -67,4 +81,5 @@ def build_pipeline_deps(settings: Settings, redis: Redis) -> PipelineDeps:
         classifier=classifier,
         retriever=retriever,
         reranker=reranker,
+        eval_logger=eval_logger,
     )

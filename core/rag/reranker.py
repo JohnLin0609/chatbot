@@ -72,7 +72,11 @@ class Qwen3Reranker:
             return []
         scores = await asyncio.to_thread(self._score, query, [h.text for h in hits])
         ranked = sorted(zip(hits, scores), key=lambda hs: hs[1], reverse=True)
-        return [h for h, _ in ranked[:top_k]]
+        top = []
+        for h, s in ranked[:top_k]:
+            h.rerank_score = s  # expose the score for eval logging
+            top.append(h)
+        return top
 
 
 def build_reranker(settings: Settings) -> Reranker | None:

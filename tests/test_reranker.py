@@ -19,6 +19,15 @@ async def test_rerank_sorts_by_score_and_truncates():
     assert [h.text for h in out] == ["b", "c"]
 
 
+async def test_rerank_attaches_scores():
+    r = _stub_reranker([0.1, 0.9, 0.5])
+    hits = [Hit(text=t, score=0, title=None, payload={}) for t in ("a", "b", "c")]
+    out = await r.rerank("q", hits, top_k=3)
+    # rerank score is exposed on the returned hits for eval logging
+    assert out[0].rerank_score == 0.9 and out[1].rerank_score == 0.5
+    assert out[2].rerank_score == 0.1
+
+
 async def test_rerank_empty():
     assert await _stub_reranker([]).rerank("q", [], top_k=3) == []
 

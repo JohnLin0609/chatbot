@@ -47,36 +47,45 @@ def _deps(tier, retriever, reranker=None, settings=None):
 
 async def test_simple_skips_retrieval():
     r = FakeRetriever(H)
-    out = await _retrieve_knowledge(_deps(SIMPLE, r), "q")
+    out, trace = await _retrieve_knowledge(_deps(SIMPLE, r), "q")
     assert out == "" and r.top_k is None
+    assert trace.tier == SIMPLE and trace.candidates == []
 
 
 async def test_medium_uses_medium_top_k_no_rerank():
     r, rk = FakeRetriever(H), FakeReranker()
-    out = await _retrieve_knowledge(_deps(MEDIUM, r, rk, make_settings(rag_medium_top_k=3)), "q")
+    out, trace = await _retrieve_knowledge(_deps(MEDIUM, r, rk, make_settings(rag_medium_top_k=3)), "q")
     assert r.top_k == 3
     assert not rk.called
     assert out.count("[") == 3
+    # medium: all retrieved candidates are included, none reranked
+    assert trace.tier == MEDIUM and not trace.reranked
+    assert len(trace.candidates) == 3 and all(c.included for c in trace.candidates)
 
 
 async def test_complex_retrieves_candidates_then_reranks():
     r, rk = FakeRetriever(H), FakeReranker()
     s = make_settings(rag_complex_candidates=5, rag_complex_top_k=2)
-    out = await _retrieve_knowledge(_deps(COMPLEX, r, rk, s), "q")
+    out, trace = await _retrieve_knowledge(_deps(COMPLEX, r, rk, s), "q")
     assert r.top_k == 5  # larger candidate pool
     assert rk.called
     assert out.count("[") == 2  # truncated after rerank
+    # trace keeps all 5 candidates; exactly 2 made the final top-k
+    assert trace.reranked and len(trace.candidates) == 5
+    assert sum(c.included for c in trace.candidates) == 2
 
 
 async def test_complex_without_reranker_uses_fused_topk():
     r = FakeRetriever(H)
     s = make_settings(rag_complex_candidates=5, rag_complex_top_k=2)
-    out = await _retrieve_knowledge(_deps(COMPLEX, r, None, s), "q")
+    out, trace = await _retrieve_knowledge(_deps(COMPLEX, r, None, s), "q")
     assert r.top_k == 5
     assert out.count("[") == 2
+    assert not trace.reranked and sum(c.included for c in trace.candidates) == 2
 
 
 async def test_no_classifier_returns_empty():
     deps = SimpleNamespace(classifier=None, retriever=None, reranker=None,
                            settings=make_settings())
-    assert await _retrieve_knowledge(deps, "q") == ""
+    out, trace = await _retrieve_knowledge(deps, "q")
+    assert out == "" and trace is None
