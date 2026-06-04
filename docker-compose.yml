@@ -1,3 +1,11 @@
+# Shared backend env: inside the compose network the stores are reached by
+# service name + internal port (NOT the dedicated host ports below). `environment:`
+# wins over `env_file: .env`, so the same .env works for host-run and docker-run.
+x-backend-env: &backend-env
+  REDIS_URL: redis://redis:6379/0
+  POSTGRES_DSN: postgresql+asyncpg://chat:chat@postgres:5432/chat
+  QDRANT_URL: http://qdrant:6333
+
 services:
   redis:
     image: redis:7-alpine
@@ -42,6 +50,73 @@ services:
       timeout: 3s
       retries: 5
 
+  # ----- application services (only started with `--profile app`) -----
+
+  # One-shot: bring the DB schema up to date, then exit. worker/api wait for this.
+  migrate:
+    build: .
+    profiles: ["app"]
+    command: alembic upgrade head
+    env_file: .env
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Core consumer: inbound stream -> pipeline -> outbound, plus the idle-session sweeper.
+  worker:
+    build: .
+    profiles: ["app"]
+    command: python -m interfaces.worker
+    env_file: .env
+    environment: *backend-env
+    volumes:
+      - hf_cache:/root/.cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Unified JWT API. Published on 8753 for curl/debug; the SPA reaches it via nginx.
+  api:
+    build: .
+    profiles: ["app"]
+    command: uvicorn interfaces.api_app:app --host 0.0.0.0 --port 8753
+    env_file: .env
+    environment: *backend-env
+    ports:
+      - "8753:8753"
+    volumes:
+      - hf_cache:/root/.cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Web console: nginx serves the built SPA and reverse-proxies the API.
+  frontend:
+    build: ./frontend
+    profiles: ["app"]
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   pgdata:
   qdrant_data:
+  hf_cache:

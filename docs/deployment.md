@@ -34,6 +34,22 @@ shared box:
 To change ports/hosts (e.g. managed Redis/Postgres, remote Qdrant), set the
 connection env vars instead of editing compose — the app reads them from `.env`.
 
+### All-in-one (dev / single box): the `app` profile
+
+For a self-contained bring-up, the app processes are also dockerised behind a
+compose `app` profile:
+
+```bash
+docker compose --profile app up -d --build   # migrate + worker + api + frontend
+# console on http://localhost:8080, API on :8753
+```
+
+This runs the migration (one-shot), worker, API, and the nginx-served SPA in
+containers, with store URLs auto-pointed at the in-network services. It's a
+convenience for dev/single-box use — **not** production-hardened (no TLS, runs as
+root, single replica). For production prefer the per-process model in §4 behind
+your own edge/TLS, and scale workers as N replicas.
+
 ## 2. Configuration & secrets
 
 Copy `.env.example` to `.env` and set at least:

@@ -31,7 +31,28 @@ The app's config defaults point at the compose services. Redis/Postgres use
 instances; Qdrant uses the standard 6333. Override via env (`REDIS_URL`,
 `POSTGRES_DSN`, `QDRANT_URL`).
 
-## Running the processes
+## Running everything in Docker
+
+The full stack is dockerised behind an `app` compose profile (the backend image
+bundles the heavy RAG deps, so the build is slow and multi-GB the first time):
+
+```bash
+docker compose --profile app up -d --build   # migrate -> worker + api + frontend
+# console: http://localhost:8080   (API also published on :8753 for curl/debug)
+docker compose --profile app down            # stop the app services
+docker compose up -d                         # infra-only (dev habit, no profile)
+```
+
+One backend image serves three roles via the compose `command:` — a one-shot
+`migrate` (`alembic upgrade head`) that worker/api wait on
+(`service_completed_successfully`), the `worker`, and the `api`. The `frontend`
+service is nginx serving the built SPA and reverse-proxying the API (single
+origin → no CORS). Store URLs are overridden in compose to service names
+(`redis:6379` / `postgres:5432` / `qdrant:6333`); `.env` only needs a provider
+key + `JWT_SECRET`. Model weights persist in the `hf_cache` volume. The Discord
+bot is not in the profile.
+
+## Running the processes by hand (local dev)
 
 Each is a separate long-running process (own terminal):
 

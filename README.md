@@ -73,7 +73,25 @@ Redis/Postgres use **dedicated host ports 6380/5434** (not 6379/5432); Qdrant us
 optional and degrade gracefully. The reranker downloads `Qwen/Qwen3-Reranker-0.6B`
 (~1.2 GB) on first use.
 
-## Run
+## Run everything in Docker (one command)
+
+The whole stack — DB migration, worker, API, and web console — is dockerised
+behind an `app` compose profile:
+
+```bash
+cp .env.example .env                            # set a provider key + JWT_SECRET
+docker compose --profile app up -d --build      # migrate -> worker + api + frontend
+# open the console at http://localhost:8080  (API also on :8753 for curl/debug)
+```
+
+`docker compose up -d` (no profile) still starts **only** redis/postgres/qdrant for
+local dev. Inside the network the stores are reached by service name, so the
+`*_URL`/`*_DSN` values in `.env` are ignored in Docker. The first build is slow and
+the image is multi-GB (it bundles `torch`/`transformers`/`spaCy`/`fastembed`); the
+reranker model downloads on the first complex query into the `hf_cache` volume.
+The Discord bot is not in the profile — run it separately if needed.
+
+## Run the processes by hand (local dev)
 
 ```bash
 python -m interfaces.worker                    # core worker + idle-session sweeper
