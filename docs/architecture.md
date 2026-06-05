@@ -233,6 +233,22 @@ toggled by `eval_logging_enabled`.
   real usage today); dense/sparse scores aren't separable (RRF fuses server-side),
   so the **fused** score+rank is logged.
 
+### LLM-as-judge (Phase B)
+
+A reference-free judge scores the captured traces offline (never in the reply
+path). `core/eval/judge.py` `Judge` makes two LLM calls per trace: a **generation**
+call scoring `faithfulness` / `answer_relevance` / `context_utilization` (0–1, with
+reasoning; for a no-context/simple turn only `answer_relevance` applies, the others
+are stored null), and a **chunk-relevance** call labeling each retrieved chunk 0–1
+(this unlocks Precision@k/MRR/NDCG/Hit Rate over the retrieved set). Results land in
+tall, re-judgeable tables **`eval_judgements`** (row per trace+metric) and
+**`eval_chunk_labels`** (row per chunk), tagged with `judge_model` + `judge_run_id`.
+The judge model is configurable (`JUDGE_PROVIDER`/`JUDGE_MODEL`, falls back to the
+main model) and its calls are themselves logged as `llm_calls` (`call_type=judge`).
+`core/eval/runner.py` `JudgeRunner` batch-scores **un-judged** traces (NOT EXISTS),
+committing per trace; driven by the CLI `python -m interfaces.judge [--all|--limit N]`
+or the admin API `POST /admin/eval/judge` + `GET /admin/eval/status`.
+
 ## Deferred (next phases)
 
 - Embedding 2D-projection chunk visualiser; streaming chat.

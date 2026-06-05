@@ -116,6 +116,13 @@ the API's CORS currently allows all origins (tighten for production).
   balancer; each instance runs its own `OutboundWaiter` (uses the
   `http-gateway` consumer group).
 - **Health**: `GET /health` on the API (8753).
+- **Eval judging**: the LLM-as-judge runs offline — `python -m interfaces.judge
+  --all` (or admin `POST /admin/eval/judge`) to score new traces. It is batch /
+  on-demand, not a long-running service.
+- **nginx upstream after recreating the API (compose `app` profile)**: the
+  `frontend` nginx resolves `api` once and caches its container IP. If you rebuild
+  /recreate only the `api` service, its IP changes and nginx serves 502 until you
+  `docker compose --profile app restart frontend` (or recreate both together).
 - **Persistence**: Postgres (`pgdata`) and Qdrant (`qdrant_data`) are Docker
   volumes — back them up. Redis is hot cache + transient streams; losing it
   loses in-flight messages and hot context (rebuilt from Postgres on next turn),

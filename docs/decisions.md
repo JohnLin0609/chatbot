@@ -300,3 +300,23 @@ token-chunked, dense-only, tool-triggered RAG:
 - **Async, best-effort, gated.** Logging is fired via `asyncio.create_task` after
   the turn commits and every write is wrapped so a logging failure never affects the
   reply; `eval_logging_enabled=false` swaps in a `NullEvalLogger` no-op.
+
+## LLM-as-judge (Phase B)
+
+- **Reference-free, offline, batch.** With the golden set still empty, the judge
+  scores only what needs no ground truth (Faithfulness, Answer Relevance, Context
+  Utilization + per-chunk relevance). It runs as a batch (CLI `interfaces/judge.py`
+  + admin `POST /admin/eval/judge`), never in the reply hot path — judging is an
+  extra LLM call per trace and shouldn't add reply latency/cost.
+- **Tall, re-judgeable tables.** `eval_judgements` (row per trace+metric) +
+  `eval_chunk_labels` (row per chunk), each tagged with `judge_model` +
+  `judge_run_id`. Adding a metric or re-running the judge appends rows (latest-wins
+  by `created_at`) instead of mutating — so runs are comparable and nothing is lost.
+- **Configurable judge model.** `JUDGE_PROVIDER`/`JUDGE_MODEL` (fallback to the main
+  model) so a stronger/cheaper judge can be swapped in without touching the chat
+  path; built from `settings.model_copy(update=…)`. Judge calls are themselves
+  wrapped in `InstrumentedChatService("judge")`, so they show up in `llm_calls`.
+- **Idempotent + resilient.** `run_batch` selects traces with no judgement
+  (`NOT EXISTS`), commits per trace (one bad trace doesn't abort the batch), and
+  skips body-less traces (judging needs the text). No-context (simple-tier) traces
+  get only Answer Relevance; Faithfulness/Context Utilization are stored null.
