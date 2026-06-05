@@ -22,6 +22,7 @@ from core.auth.security import create_access_token
 from core.auth.store import DuplicateEmail, UserStore
 from core.config import get_settings
 from core.documents.store import DocumentStore
+from core.eval.factory import build_judge_runner
 from core.feedback.store import FeedbackStore
 from core.persistence import repository as repo
 from core.settings.store import SYSTEM_PROMPT_KEY, AppSettingStore
@@ -72,6 +73,10 @@ class FeedbackRequest(BaseModel):
     rating: int = Field(..., description="+1 (👍) or -1 (👎)")
 
 
+class JudgeRequest(BaseModel):
+    limit: int | None = None  # max traces to judge this batch (None = batch_size)
+
+
 class IngestRequest(BaseModel):
     text: str = Field(..., min_length=1)
     title: str | None = None
@@ -96,6 +101,7 @@ def build_app(
     app_settings=None,
     feedback=None,
     sessionmaker=None,
+    judge_runner=None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -119,6 +125,7 @@ def build_app(
             app.state.app_settings = app_settings
             app.state.feedback = feedback
             app.state.sessionmaker = sessionmaker
+            app.state.judge_runner = judge_runner
         else:
             sm = create_sessionmaker(create_engine(settings.postgres_dsn))
             store = QdrantVectorStore(
@@ -138,6 +145,7 @@ def build_app(
             app.state.app_settings = AppSettingStore(sm)
             app.state.feedback = FeedbackStore(sm)
             app.state.sessionmaker = sm
+            app.state.judge_runner = build_judge_runner(settings, sm)
         try:
             yield
         finally:
@@ -316,6 +324,24 @@ def build_app(
     async def feedback_summary(request: Request,
                                _admin: dict = Depends(require_admin)) -> dict:
         return await request.app.state.feedback.summary()
+
+    # ----------------------------------------------- LLM-as-judge (admin)
+    @app.post("/admin/eval/judge")
+    async def run_judge(req: JudgeRequest, request: Request,
+                        _admin: dict = Depends(require_admin)) -> dict:
+        runner = request.app.state.judge_runner
+        if runner is None:
+            raise HTTPException(status_code=503, detail="judge runner unavailable")
+        limit = req.limit or settings.judge_batch_size
+        return await runner.run_batch(limit=limit)
+
+    @app.get("/admin/eval/status")
+    async def eval_status(request: Request,
+                          _admin: dict = Depends(require_admin)) -> dict:
+        runner = request.app.state.judge_runner
+        if runner is None:
+            raise HTTPException(status_code=503, detail="judge runner unavailable")
+        return await runner.status()
 
     return app
 

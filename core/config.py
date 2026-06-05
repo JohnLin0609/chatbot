@@ -122,6 +122,13 @@ class Settings(BaseSettings):
     eval_log_message_bodies: bool = True
     eval_chunk_text_max: int = 2000  # truncate stored chunk text
 
+    # ------------------------------------------------------ LLM-as-judge (Phase B)
+    judge_enabled: bool = True
+    # Judge provider/model — fall back to the main provider/model when unset.
+    judge_provider: Provider | None = None
+    judge_model: str = ""
+    judge_batch_size: int = 20
+
     # ----------------------------------------------- Tier-2 channel summary
     # Turns overflowing the window are folded into a short per-channel summary.
     channel_summary_token_cap: int = 150

@@ -350,3 +350,56 @@ class EvalGoldenRelevantChunk(Base):
     golden_query: Mapped[EvalGoldenQuery] = relationship(
         back_populates="relevant_chunks"
     )
+
+
+# ----------------------------------------------- eval judgements (Phase B: judge)
+class EvalJudgement(Base):
+    """One LLM-as-judge score for a trace+metric. Tall + re-judgeable: a re-run
+    appends new rows (latest-wins by created_at), tagged with model + run id."""
+
+    __tablename__ = "eval_judgements"
+    __table_args__ = (
+        Index("ix_eval_judgements_trace_metric", "trace_id", "metric"),
+        Index("ix_eval_judgements_run", "judge_run_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    trace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("eval_traces.id"), nullable=False
+    )
+    metric: Mapped[str] = mapped_column(String, nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0–1, null=N/A
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    judge_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    judge_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    judge_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvalChunkLabel(Base):
+    """Judge's relevance label for one retrieved chunk (enables Precision@k / MRR /
+    NDCG / Hit Rate over the retrieved set)."""
+
+    __tablename__ = "eval_chunk_labels"
+    __table_args__ = (
+        Index("ix_eval_chunk_labels_trace", "trace_id"),
+        Index("ix_eval_chunk_labels_chunk", "chunk_ref_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    trace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("eval_traces.id"), nullable=False
+    )
+    chunk_ref_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("eval_retrieved_chunks.id"), nullable=True
+    )
+    relevance: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0–1
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    judge_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    judge_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    judge_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

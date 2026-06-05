@@ -45,6 +45,15 @@ def _admin():
     return {"id": 1, "email": "a@x.com", "role": "admin"}
 
 
+class FakeJudgeRunner:
+    async def run_batch(self, limit=None):
+        return {"judged": 3, "skipped": 0, "remaining": 0, "judge_run_id": "run123"}
+
+    async def status(self):
+        return {"total_traces": 3, "judged": 3, "unjudged": 0,
+                "avg_scores": {"answer_relevance": 0.9}}
+
+
 @pytest_asyncio.fixture
 async def app(sessionmaker):
     app = build_app(settings=S)
@@ -54,6 +63,7 @@ async def app(sessionmaker):
     app.state.sessionmaker = sessionmaker
     app.state.app_settings = AppSettingStore(sessionmaker)
     app.state.feedback = FeedbackStore(sessionmaker)
+    app.state.judge_runner = FakeJudgeRunner()
     return app
 
 
@@ -161,3 +171,23 @@ async def test_feedback_summary_admin_ok(app):
         r = await c.get("/admin/feedback/summary", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     assert r.json()["down"] == 1
+
+
+# ---------------------------------------------------------------- judge (admin)
+async def test_judge_endpoints_admin_gated(app):
+    app.dependency_overrides[get_current_user] = _user
+    async with await _client(app) as c:
+        assert (await c.post("/admin/eval/judge", json={},
+                             headers={"Authorization": "Bearer x"})).status_code == 403
+        assert (await c.get("/admin/eval/status",
+                            headers={"Authorization": "Bearer x"})).status_code == 403
+
+
+async def test_judge_run_and_status_admin(app):
+    app.dependency_overrides[get_current_user] = _admin
+    async with await _client(app) as c:
+        r = await c.post("/admin/eval/judge", json={"limit": 5},
+                         headers={"Authorization": "Bearer x"})
+        assert r.status_code == 200 and r.json()["judged"] == 3
+        s = await c.get("/admin/eval/status", headers={"Authorization": "Bearer x"})
+        assert s.status_code == 200 and s.json()["avg_scores"]["answer_relevance"] == 0.9
