@@ -36,6 +36,11 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
 - **Feedback loop**: per-reply **👍/👎** for all users (toggle/cancelable), with an
   admin summary view.
 - **Tools**: extensible tool-calling loop; `web_search` (Brave) when keyed.
+- **Eval / observability**: every turn is logged (full context, retrieved
+  candidates + scores/ranks, reply, tokens, latency); an offline **LLM-as-judge**
+  scores them reference-free (Faithfulness / Answer Relevance / Context Utilization
+  + per-chunk relevance) via `python -m interfaces.judge` or an admin endpoint.
+  Golden-set tables are reserved for future Recall@k / Correctness.
 - **Discord** adapter with live reaction status; **CLI** for local testing.
 
 ## Layout
@@ -109,6 +114,7 @@ python -m interfaces.worker                    # core worker + idle-session swee
 uvicorn interfaces.api_app:app --port 8753     # unified JWT API
 python -m interfaces.discord_app               # Discord bot (needs DISCORD_BOT_TOKEN)
 python -m interfaces.cli --session web:c1      # CLI (optional, unauthenticated)
+python -m interfaces.judge --all               # offline LLM-as-judge over eval traces
 cd frontend && npm install && npm run dev       # web console on http://localhost:5173
 ```
 
