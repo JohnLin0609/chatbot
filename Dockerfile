@@ -13,9 +13,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# CPU-only torch first, so the default CUDA wheel (multi-GB) is never pulled in by
-# `-r requirements.txt`.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Install torch first so `-r requirements.txt` doesn't pull a different build.
+# Default is the lean CPU wheel. For GPU (the worker's Qwen3 reranker), the
+# docker-compose.gpu.yml override sets TORCH_INDEX_URL to the CUDA 13.0 index
+# (matches the host driver) and reserves the device — so plain `up` stays small
+# and only the opt-in GPU path pulls the multi-GB CUDA wheel.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch --index-url ${TORCH_INDEX_URL}
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

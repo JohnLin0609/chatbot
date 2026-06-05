@@ -123,6 +123,20 @@ the API's CORS currently allows all origins (tighten for production).
   `frontend` nginx resolves `api` once and caches its container IP. If you rebuild
   /recreate only the `api` service, its IP changes and nginx serves 502 until you
   `docker compose --profile app restart frontend` (or recreate both together).
+- **GPU for the reranker (worker)**: the base image is a **lean CPU torch** build
+  (plain `docker compose --profile app up` needs no GPU/toolkit). GPU is an
+  **opt-in override** (`docker-compose.gpu.yml`) that (a) rebuilds the worker with
+  the **CUDA 13.0 torch wheel** and (b) reserves the device, so the worker's Qwen3
+  reranker runs on the GPU (`device="auto"` picks CUDA). It needs
+  **nvidia-container-toolkit** on the host:
+  ```bash
+  sudo apt-get install -y nvidia-container-toolkit          # (after adding NVIDIA's apt repo)
+  sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+  docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile app up -d --build
+  docker compose --profile app exec worker python -c "import torch; print(torch.cuda.is_available())"  # True
+  ```
+  The CUDA wheel pulls several GB of `nvidia-*` packages from `pypi.nvidia.com` —
+  the first GPU build is large and network-sensitive (retry on timeouts).
 - **Persistence**: Postgres (`pgdata`) and Qdrant (`qdrant_data`) are Docker
   volumes — back them up. Redis is hot cache + transient streams; losing it
   loses in-flight messages and hot context (rebuilt from Postgres on next turn),

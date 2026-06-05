@@ -65,6 +65,9 @@ services:
     restart: "no"
 
   # Core consumer: inbound stream -> pipeline -> outbound, plus the idle-session sweeper.
+  # The Qwen3 reranker runs here (only the worker builds it). To put it on the GPU,
+  # add the docker-compose.gpu.yml override (needs nvidia-container-toolkit); without
+  # it the CUDA torch wheel falls back to CPU.
   worker:
     build: .
     profiles: ["app"]
