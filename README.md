@@ -39,8 +39,10 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
 - **Eval / observability**: every turn is logged (full context, retrieved
   candidates + scores/ranks, reply, tokens, latency); an offline **LLM-as-judge**
   scores them reference-free (Faithfulness / Answer Relevance / Context Utilization
-  + per-chunk relevance) via `python -m interfaces.judge` or an admin endpoint.
-  Golden-set tables are reserved for future Recall@k / Correctness.
+  + per-chunk relevance) via `python -m interfaces.judge` or an admin endpoint. A
+  **golden eval set** (admin authoring UI at `/admin/golden`) re-runs retrieval to
+  compute true **Recall@k / Precision@k / MRR / NDCG / Hit Rate** + **Correctness**
+  (answer vs reference).
 - **Discord** adapter with live reaction status; **CLI** for local testing.
 
 ## Layout

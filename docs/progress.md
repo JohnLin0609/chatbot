@@ -70,6 +70,11 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
   relevance — into `eval_judgements` + `eval_chunk_labels` (configurable judge
   model). Run via `python -m interfaces.judge --all` or admin `POST /admin/eval/judge`
   / `GET /admin/eval/status`. Idempotent (judges only un-judged traces).
+- **Golden eval (Phase C)**: an admin **authoring UI** (`/admin/golden`) builds a
+  golden set (query + reference answer + relevant chunks marked by browsing docs);
+  **Run eval** re-runs retrieval per query and computes true **Recall@k / Precision@k
+  / MRR / NDCG / Hit Rate** + **Correctness** (generated answer judged vs reference)
+  into `eval_golden_runs` / `eval_golden_results`, shown inline.
 
 ## Test inventory
 
@@ -95,7 +100,8 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_feedback.py`, `test_repository.py` (extended) | feedback insert/toggle/flip + summary; session cascade-delete (+ feedback) + app-setting KV CRUD |
 | `test_context_builder.py` (extended) | system-prompt override wins; None/empty falls back to the default |
 | `test_eval_logger.py`, `test_eval_instrument.py` | eval trace parent+child write, body-nulling, never-raises; instrumented chat records llm_call usage/latency, passes calls through, survives logger failure |
-| `test_eval_judge.py`, `test_eval_runner.py` | judge parses generation metrics + chunk labels (no-context → answer-relevance only; malformed JSON → null, no raise; scores clamped); runner judges only un-judged traces, skips body-less, commits per trace, survives a failing trace, status aggregates |
+| `test_eval_judge.py`, `test_eval_runner.py` | judge parses generation metrics + chunk labels (no-context → answer-relevance only; malformed JSON → null, no raise; scores clamped; correctness vs reference); runner judges only un-judged traces, skips body-less, commits per trace, survives a failing trace, status aggregates |
+| `test_eval_metrics.py`, `test_golden_store.py`, `test_golden_runner.py` | retrieval metrics (textbook recall/precision/mrr/graded-ndcg/hit-rate, None without golden); golden CRUD + replace-set; golden run computes metrics + correctness, stores run+results, skips no-reference correctness |
 | `test_adaptive_rag.py`/`test_reranker.py`/`test_pipeline.py` (extended) | `_retrieve_knowledge` returns a `RetrievalTrace` (candidates + included); rerank attaches scores; a turn writes an eval_trace (+chunks for RAG, none for simple) |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
@@ -110,7 +116,7 @@ Unit tests use **fakeredis**, in-memory **SQLite (StaticPool)**, and **FakeChat*
 fakes — no network or Docker needed. (See [decisions.md](decisions.md) on why
 SQLite/fakeredis are test-only.)
 
-**Frontend** (`frontend/`, Vitest + React Testing Library, 23 tests): API client
+**Frontend** (`frontend/`, Vitest + React Testing Library, 24 tests): API client
 (Bearer / 401), auth context, route guards (protected + admin), ChunkInspector
 & MessageBubble render (incl. 👍/👎 controls), conversation storage (per-user
 isolation, 20-cap eviction, rating toggle). Plus **browser e2e** via Playwright:

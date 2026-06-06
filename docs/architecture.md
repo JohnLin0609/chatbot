@@ -249,6 +249,22 @@ main model) and its calls are themselves logged as `llm_calls` (`call_type=judge
 committing per trace; driven by the CLI `python -m interfaces.judge [--all|--limit N]`
 or the admin API `POST /admin/eval/judge` + `GET /admin/eval/status`.
 
+### Golden eval set (Phase C)
+
+The reserved golden tables are now used: an admin **authoring UI** (`/admin/golden`)
+creates golden queries + reference answers and marks relevant chunks (browse
+documents → chunks → checkbox + grade), stored in `eval_golden_queries` /
+`eval_golden_relevant_chunks` via `GoldenStore`. `core/eval/golden_runner.py`
+`GoldenRunner` then runs an offline eval over the set: for each query it **re-runs
+retrieval** (hybrid + rerank, classifier bypassed), computes **Recall@k /
+Precision@k / MRR / NDCG / Hit Rate** (`core/eval/metrics.py`, pure functions) vs
+the golden relevant set, generates an answer from the reranked top-k and judges its
+**Correctness** vs the reference (`Judge.judge_correctness`). Results land in
+`eval_golden_runs` (aggregate) + `eval_golden_results` (per query). Triggered by the
+"Run eval" button → `POST /admin/golden/eval`; `GET /admin/golden/runs/latest` feeds
+the inline results table. These ground-truth metrics (true Recall@k, Correctness)
+are what the reference-free judge can't provide.
+
 ## Deferred (next phases)
 
 - Embedding 2D-projection chunk visualiser; streaming chat.

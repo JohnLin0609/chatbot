@@ -320,3 +320,26 @@ token-chunked, dense-only, tool-triggered RAG:
   (`NOT EXISTS`), commits per trace (one bad trace doesn't abort the batch), and
   skips body-less traces (judging needs the text). No-context (simple-tier) traces
   get only Answer Relevance; Faithfulness/Context Utilization are stored null.
+
+## Golden eval set (Phase C)
+
+- **Human-curated gold, browse-to-mark.** The authoring UI marks relevant chunks
+  by browsing documents → chunks (not only from a retrieval result), so chunks the
+  retriever *misses* can still be marked — otherwise Recall@k would be silently
+  inflated (you can't measure a miss you never recorded).
+- **Eval re-runs retrieval fresh** per golden query (hybrid + rerank, classifier
+  bypassed since golden queries are knowledge-seeking) rather than reusing logged
+  production traces — it measures the retriever directly and is independent of
+  traffic. Metrics live in `core/eval/metrics.py` as pure functions (textbook
+  Recall/Precision/MRR/graded-NDCG/Hit-Rate), returning `None` when a query has no
+  marked relevant chunk (undefined, not zero).
+- **Correctness = generate-then-judge-vs-reference.** A minimal RAG generation
+  (reranked top-k injected, no conversation state touched) produces an answer that
+  `Judge.judge_correctness` scores against the reference — the one generation metric
+  that needs ground truth, complementing Phase B's reference-free set.
+- **Runner lives in the API** (admin "Run eval" button) so it eager-loads the
+  reranker at API startup; acceptable for a dev console (the model is cached in the
+  `hf_cache` volume, shared with the worker).
+- **Tall results, re-runnable.** Each run is an `eval_golden_runs` row + per-query
+  `eval_golden_results`; re-running appends a new run (history kept) rather than
+  overwriting.
