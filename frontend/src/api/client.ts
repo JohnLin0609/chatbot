@@ -3,11 +3,21 @@ import type {
   Chunk,
   DocumentMeta,
   FeedbackSummary,
+  GoldenChunk,
+  GoldenQuery,
+  GoldenRun,
   IngestResult,
   SystemPrompt,
   TokenResponse,
   User,
 } from "./types";
+
+interface GoldenInput {
+  query: string;
+  reference_answer?: string | null;
+  notes?: string | null;
+  relevant_chunks: GoldenChunk[];
+}
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8753";
 const TOKEN_KEY = "cc_token";
@@ -150,3 +160,25 @@ export const setSystemPrompt = (prompt: string) =>
 
 export const getFeedbackSummary = () =>
   apiFetch<FeedbackSummary>("/admin/feedback/summary");
+
+// ---- golden eval set --------------------------------------------------------
+export const listGolden = () =>
+  apiFetch<{ queries: GoldenQuery[] }>("/admin/golden").then((r) => r.queries);
+
+export const createGolden = (body: GoldenInput) =>
+  apiFetch<GoldenQuery>("/admin/golden", { method: "POST", body });
+
+export const updateGolden = (id: number, body: GoldenInput) =>
+  apiFetch<GoldenQuery>(`/admin/golden/${id}`, { method: "PUT", body });
+
+export const deleteGolden = (id: number) =>
+  apiFetch<void>(`/admin/golden/${id}`, { method: "DELETE" });
+
+export const runGoldenEval = (k_values?: number[]) =>
+  apiFetch<GoldenRun>("/admin/golden/eval", {
+    method: "POST",
+    body: { k_values: k_values ?? null },
+  });
+
+export const latestGoldenRun = () =>
+  apiFetch<GoldenRun>("/admin/golden/runs/latest");

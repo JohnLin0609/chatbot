@@ -6,6 +6,7 @@ import pytest_asyncio
 from httpx import ASGITransport
 
 from core.auth.deps import get_current_user
+from core.eval.golden_store import GoldenStore
 from core.feedback.store import FeedbackStore
 from core.persistence import repository as repo
 from core.settings.store import AppSettingStore
@@ -54,6 +55,16 @@ class FakeJudgeRunner:
                 "avg_scores": {"answer_relevance": 0.9}}
 
 
+class FakeGoldenRunner:
+    async def run(self, k_values=None):
+        return {"run_id": 1, "num_queries": 2, "k_values": k_values or [1, 3, 5],
+                "aggregate": {"recall": {"3": 0.8}, "correctness": 0.75}}
+
+    async def latest_run(self):
+        return {"run_id": 1, "num_queries": 2, "aggregate": {"correctness": 0.75},
+                "results": []}
+
+
 @pytest_asyncio.fixture
 async def app(sessionmaker):
     app = build_app(settings=S)
@@ -64,6 +75,8 @@ async def app(sessionmaker):
     app.state.app_settings = AppSettingStore(sessionmaker)
     app.state.feedback = FeedbackStore(sessionmaker)
     app.state.judge_runner = FakeJudgeRunner()
+    app.state.golden_store = GoldenStore(sessionmaker)
+    app.state.golden_runner = FakeGoldenRunner()
     return app
 
 
@@ -191,3 +204,45 @@ async def test_judge_run_and_status_admin(app):
         assert r.status_code == 200 and r.json()["judged"] == 3
         s = await c.get("/admin/eval/status", headers={"Authorization": "Bearer x"})
         assert s.status_code == 200 and s.json()["avg_scores"]["answer_relevance"] == 0.9
+
+
+# ---------------------------------------------------------------- golden (admin)
+async def test_golden_admin_gated(app):
+    app.dependency_overrides[get_current_user] = _user
+    async with await _client(app) as c:
+        assert (await c.get("/admin/golden",
+                            headers={"Authorization": "Bearer x"})).status_code == 403
+        assert (await c.post("/admin/golden", json={"query": "q"},
+                             headers={"Authorization": "Bearer x"})).status_code == 403
+
+
+async def test_golden_crud_and_eval(app):
+    app.dependency_overrides[get_current_user] = _admin
+    async with await _client(app) as c:
+        # create
+        r = await c.post("/admin/golden", json={
+            "query": "how long for a refund?", "reference_answer": "14 days",
+            "relevant_chunks": [{"doc_id": "d1", "chunk_index": 0, "relevance": 2}],
+        }, headers={"Authorization": "Bearer x"})
+        assert r.status_code == 200
+        qid = r.json()["id"]
+        assert r.json()["relevant_chunks"][0]["relevance"] == 2
+        # list
+        r = await c.get("/admin/golden", headers={"Authorization": "Bearer x"})
+        assert len(r.json()["queries"]) == 1
+        # update
+        r = await c.put(f"/admin/golden/{qid}", json={"query": "q2", "relevant_chunks": []},
+                        headers={"Authorization": "Bearer x"})
+        assert r.json()["query"] == "q2" and r.json()["relevant_chunks"] == []
+        # run eval (fake runner)
+        r = await c.post("/admin/golden/eval", json={},
+                         headers={"Authorization": "Bearer x"})
+        assert r.status_code == 200 and r.json()["aggregate"]["correctness"] == 0.75
+        # latest
+        r = await c.get("/admin/golden/runs/latest", headers={"Authorization": "Bearer x"})
+        assert r.status_code == 200 and r.json()["num_queries"] == 2
+        # delete
+        assert (await c.delete(f"/admin/golden/{qid}",
+                               headers={"Authorization": "Bearer x"})).status_code == 204
+        assert (await c.delete("/admin/golden/9999",
+                               headers={"Authorization": "Bearer x"})).status_code == 404

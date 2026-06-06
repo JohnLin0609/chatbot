@@ -22,7 +22,8 @@ from core.auth.security import create_access_token
 from core.auth.store import DuplicateEmail, UserStore
 from core.config import get_settings
 from core.documents.store import DocumentStore
-from core.eval.factory import build_judge_runner
+from core.eval.factory import build_golden_runner, build_judge_runner
+from core.eval.golden_store import GoldenStore
 from core.feedback.store import FeedbackStore
 from core.persistence import repository as repo
 from core.settings.store import SYSTEM_PROMPT_KEY, AppSettingStore
@@ -77,6 +78,23 @@ class JudgeRequest(BaseModel):
     limit: int | None = None  # max traces to judge this batch (None = batch_size)
 
 
+class GoldenChunk(BaseModel):
+    doc_id: str
+    chunk_index: int
+    relevance: int = 1
+
+
+class GoldenQueryRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    reference_answer: str | None = None
+    notes: str | None = None
+    relevant_chunks: list[GoldenChunk] = Field(default_factory=list)
+
+
+class GoldenEvalRequest(BaseModel):
+    k_values: list[int] | None = None
+
+
 class IngestRequest(BaseModel):
     text: str = Field(..., min_length=1)
     title: str | None = None
@@ -102,6 +120,8 @@ def build_app(
     feedback=None,
     sessionmaker=None,
     judge_runner=None,
+    golden_store=None,
+    golden_runner=None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -126,6 +146,8 @@ def build_app(
             app.state.feedback = feedback
             app.state.sessionmaker = sessionmaker
             app.state.judge_runner = judge_runner
+            app.state.golden_store = golden_store
+            app.state.golden_runner = golden_runner
         else:
             sm = create_sessionmaker(create_engine(settings.postgres_dsn))
             store = QdrantVectorStore(
@@ -146,6 +168,8 @@ def build_app(
             app.state.feedback = FeedbackStore(sm)
             app.state.sessionmaker = sm
             app.state.judge_runner = build_judge_runner(settings, sm)
+            app.state.golden_store = GoldenStore(sm)
+            app.state.golden_runner = build_golden_runner(settings, sm)
         try:
             yield
         finally:
@@ -342,6 +366,53 @@ def build_app(
         if runner is None:
             raise HTTPException(status_code=503, detail="judge runner unavailable")
         return await runner.status()
+
+    # ----------------------------------------------- golden eval set (admin)
+    @app.get("/admin/golden")
+    async def list_golden(request: Request,
+                          _admin: dict = Depends(require_admin)) -> dict:
+        return {"queries": await request.app.state.golden_store.list()}
+
+    @app.post("/admin/golden")
+    async def create_golden(req: GoldenQueryRequest, request: Request,
+                            _admin: dict = Depends(require_admin)) -> dict:
+        return await request.app.state.golden_store.create(
+            query=req.query, reference_answer=req.reference_answer, notes=req.notes,
+            relevant_chunks=[c.model_dump() for c in req.relevant_chunks],
+        )
+
+    @app.put("/admin/golden/{query_id}")
+    async def update_golden(query_id: int, req: GoldenQueryRequest, request: Request,
+                            _admin: dict = Depends(require_admin)) -> dict:
+        row = await request.app.state.golden_store.update(
+            query_id, query=req.query, reference_answer=req.reference_answer,
+            notes=req.notes, relevant_chunks=[c.model_dump() for c in req.relevant_chunks],
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="golden query not found")
+        return row
+
+    @app.delete("/admin/golden/{query_id}", status_code=204)
+    async def delete_golden(query_id: int, request: Request,
+                            _admin: dict = Depends(require_admin)) -> None:
+        if not await request.app.state.golden_store.delete(query_id):
+            raise HTTPException(status_code=404, detail="golden query not found")
+
+    @app.post("/admin/golden/eval")
+    async def run_golden_eval(req: GoldenEvalRequest, request: Request,
+                              _admin: dict = Depends(require_admin)) -> dict:
+        runner = request.app.state.golden_runner
+        if runner is None:
+            raise HTTPException(status_code=503, detail="golden runner unavailable")
+        return await runner.run(req.k_values)
+
+    @app.get("/admin/golden/runs/latest")
+    async def latest_golden_run(request: Request,
+                                _admin: dict = Depends(require_admin)) -> dict:
+        runner = request.app.state.golden_runner
+        if runner is None:
+            raise HTTPException(status_code=503, detail="golden runner unavailable")
+        return await runner.latest_run() or {}
 
     return app
 

@@ -7,6 +7,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ChatPage from "./pages/ChatPage";
 import AdminPage from "./pages/AdminPage";
 import SystemPromptPage from "./pages/SystemPromptPage";
+import GoldenPage from "./pages/GoldenPage";
 
 export default function App() {
   const { loading } = useAuth();
@@ -42,6 +43,14 @@ export default function App() {
         element={
           <AdminRoute>
             <SystemPromptPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/golden"
+        element={
+          <AdminRoute>
+            <GoldenPage />
           </AdminRoute>
         }
       />

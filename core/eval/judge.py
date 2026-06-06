@@ -41,6 +41,12 @@ _CHUNK_SYSTEM = (
     'Reply with ONLY JSON: {"chunks":[{"index":<int>,"relevance":<0-1>,'
     '"reasoning":"..."}, ...]}.'
 )
+_CORRECTNESS_SYSTEM = (
+    "You compare a candidate ANSWER to a known-correct REFERENCE for a QUESTION. "
+    "Score correctness 0.0 (wrong/contradictory) to 1.0 (fully matches the reference "
+    "in substance — wording may differ) with a one-sentence reason.\n"
+    'Reply with ONLY JSON: {"score":<0-1>,"reasoning":"..."}.'
+)
 
 
 def _extract_json(raw: str) -> dict:
@@ -154,6 +160,22 @@ class Judge:
                 scores.append(MetricScore(metric=metric, score=None,
                                           reasoning="no retrieved context"))
         return scores
+
+    async def judge_correctness(self, query: str, answer: str,
+                                reference: str) -> MetricScore:
+        """Score a generated answer against a reference answer (golden eval)."""
+        user = (f"QUESTION:\n{query or ''}\n\nREFERENCE:\n{reference or ''}\n\n"
+                f"ANSWER:\n{answer or ''}")
+        raw = await self._chat.generate_reply(
+            "judge", [{"role": "system", "content": _CORRECTNESS_SYSTEM},
+                      {"role": "user", "content": user}]
+        )
+        data = _extract_json(raw)
+        return MetricScore(
+            metric="correctness",
+            score=_clamp01(data.get("score")),
+            reasoning=data.get("reasoning"),
+        )
 
     async def _judge_chunks(self, trace, chunks) -> list[ChunkLabel]:
         listing = "\n".join(

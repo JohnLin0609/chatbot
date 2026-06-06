@@ -352,6 +352,58 @@ class EvalGoldenRelevantChunk(Base):
     )
 
 
+class EvalGoldenRun(Base):
+    """One golden-eval run: retrieval re-run + correctness over all golden queries,
+    with the mean of each metric. Per-query detail is in EvalGoldenResult."""
+
+    __tablename__ = "eval_golden_runs"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    k_values: Mapped[dict | None] = mapped_column(JsonDoc, nullable=True)
+    num_queries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    judge_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    aggregate: Mapped[dict | None] = mapped_column(JsonDoc, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    results: Mapped[list["EvalGoldenResult"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class EvalGoldenResult(Base):
+    """Per-query result within a golden-eval run: the ranked retrieval, the
+    retrieval metrics, and the generated answer + correctness vs the reference."""
+
+    __tablename__ = "eval_golden_results"
+    __table_args__ = (
+        Index("ix_golden_results_run", "run_id"),
+        Index("ix_golden_results_query", "golden_query_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("eval_golden_runs.id"), nullable=False
+    )
+    golden_query_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("eval_golden_queries.id"), nullable=True
+    )
+    retrieved: Mapped[dict | None] = mapped_column(JsonDoc, nullable=True)
+    metrics: Mapped[dict | None] = mapped_column(JsonDoc, nullable=True)
+    generated_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    correctness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    correctness_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped[EvalGoldenRun] = relationship(back_populates="results")
+
+
 # ----------------------------------------------- eval judgements (Phase B: judge)
 class EvalJudgement(Base):
     """One LLM-as-judge score for a trace+metric. Tall + re-judgeable: a re-run

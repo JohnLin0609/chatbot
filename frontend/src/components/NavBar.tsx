@@ -28,6 +28,7 @@ export default function NavBar() {
           {user?.role === "admin" && navLink("/admin", "Admin")}
           {user?.role === "admin" &&
             navLink("/admin/system-prompt", "System Prompt")}
+          {user?.role === "admin" && navLink("/admin/golden", "Golden")}
         </nav>
       </div>
       <div className="flex items-center gap-3 text-sm text-gray-500">

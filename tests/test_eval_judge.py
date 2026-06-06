@@ -62,6 +62,14 @@ async def test_judge_malformed_json_yields_null_scores_no_raise():
     assert res.chunk_labels[0].relevance is None
 
 
+async def test_judge_correctness():
+    judge = Judge(FakeJudgeChat(raw='{"score":0.75,"reasoning":"mostly right"}'),
+                  make_settings())
+    res = await judge.judge_correctness("q?", "an answer", "the reference")
+    assert res.metric == "correctness" and res.score == 0.75
+    assert res.reasoning == "mostly right"
+
+
 async def test_scores_clamped_to_unit_interval():
     judge = Judge(FakeJudgeChat(
         raw='{"faithfulness":{"score":1.7},"answer_relevance":{"score":-3},'

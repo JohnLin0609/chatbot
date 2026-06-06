@@ -129,6 +129,10 @@ class Settings(BaseSettings):
     judge_model: str = ""
     judge_batch_size: int = 20
 
+    # ------------------------------------------------------ Golden eval (Phase C)
+    golden_eval_k_values: list[int] = [1, 3, 5]
+    golden_eval_candidates: int = 20  # retrieval depth for the ranked list
+
     # ----------------------------------------------- Tier-2 channel summary
     # Turns overflowing the window are folded into a short per-channel summary.
     channel_summary_token_cap: int = 150
