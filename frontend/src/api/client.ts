@@ -1,6 +1,7 @@
 import type {
   ChatResponse,
   Chunk,
+  Dashboard,
   DocumentMeta,
   FeedbackSummary,
   GoldenChunk,
@@ -182,3 +183,5 @@ export const runGoldenEval = (k_values?: number[]) =>
 
 export const latestGoldenRun = () =>
   apiFetch<GoldenRun>("/admin/golden/runs/latest");
+
+export const getDashboard = () => apiFetch<Dashboard>("/admin/dashboard");

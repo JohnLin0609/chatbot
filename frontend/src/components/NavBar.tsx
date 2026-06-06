@@ -26,6 +26,7 @@ export default function NavBar() {
         <nav className="flex gap-1">
           {navLink("/", "Chat")}
           {user?.role === "admin" && navLink("/admin", "Admin")}
+          {user?.role === "admin" && navLink("/admin/dashboard", "Dashboard")}
           {user?.role === "admin" &&
             navLink("/admin/system-prompt", "System Prompt")}
           {user?.role === "admin" && navLink("/admin/golden", "Golden")}

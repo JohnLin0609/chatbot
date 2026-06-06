@@ -22,6 +22,7 @@ from core.auth.security import create_access_token
 from core.auth.store import DuplicateEmail, UserStore
 from core.config import get_settings
 from core.documents.store import DocumentStore
+from core.eval.dashboard import DashboardStore
 from core.eval.factory import build_golden_runner, build_judge_runner
 from core.eval.golden_store import GoldenStore
 from core.feedback.store import FeedbackStore
@@ -122,6 +123,7 @@ def build_app(
     judge_runner=None,
     golden_store=None,
     golden_runner=None,
+    dashboard=None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -148,6 +150,7 @@ def build_app(
             app.state.judge_runner = judge_runner
             app.state.golden_store = golden_store
             app.state.golden_runner = golden_runner
+            app.state.dashboard = dashboard
         else:
             sm = create_sessionmaker(create_engine(settings.postgres_dsn))
             store = QdrantVectorStore(
@@ -170,6 +173,7 @@ def build_app(
             app.state.judge_runner = build_judge_runner(settings, sm)
             app.state.golden_store = GoldenStore(sm)
             app.state.golden_runner = build_golden_runner(settings, sm)
+            app.state.dashboard = DashboardStore(sm, settings)
         try:
             yield
         finally:
@@ -413,6 +417,15 @@ def build_app(
         if runner is None:
             raise HTTPException(status_code=503, detail="golden runner unavailable")
         return await runner.latest_run() or {}
+
+    # ----------------------------------------------- eval dashboard (admin)
+    @app.get("/admin/dashboard")
+    async def dashboard(request: Request,
+                        _admin: dict = Depends(require_admin)) -> dict:
+        store = request.app.state.dashboard
+        if store is None:
+            raise HTTPException(status_code=503, detail="dashboard unavailable")
+        return await store.summary()
 
     return app
 

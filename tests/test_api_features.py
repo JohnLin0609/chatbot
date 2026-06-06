@@ -65,6 +65,13 @@ class FakeGoldenRunner:
                 "results": []}
 
 
+class FakeDashboard:
+    async def summary(self, k_values=None):
+        return {"overview": {"traces": 5}, "generation": {"series": []},
+                "retrieval": {"series": []}, "cost": {"totals": {"calls": 9}},
+                "golden": {"series": []}, "k_values": [1, 3, 5]}
+
+
 @pytest_asyncio.fixture
 async def app(sessionmaker):
     app = build_app(settings=S)
@@ -77,6 +84,7 @@ async def app(sessionmaker):
     app.state.judge_runner = FakeJudgeRunner()
     app.state.golden_store = GoldenStore(sessionmaker)
     app.state.golden_runner = FakeGoldenRunner()
+    app.state.dashboard = FakeDashboard()
     return app
 
 
@@ -246,3 +254,18 @@ async def test_golden_crud_and_eval(app):
                                headers={"Authorization": "Bearer x"})).status_code == 204
         assert (await c.delete("/admin/golden/9999",
                                headers={"Authorization": "Bearer x"})).status_code == 404
+
+
+# ---------------------------------------------------------------- dashboard (admin)
+async def test_dashboard_admin_gated(app):
+    app.dependency_overrides[get_current_user] = _user
+    async with await _client(app) as c:
+        assert (await c.get("/admin/dashboard",
+                            headers={"Authorization": "Bearer x"})).status_code == 403
+
+
+async def test_dashboard_admin_ok(app):
+    app.dependency_overrides[get_current_user] = _admin
+    async with await _client(app) as c:
+        r = await c.get("/admin/dashboard", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200 and r.json()["overview"]["traces"] == 5

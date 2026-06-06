@@ -73,6 +73,71 @@ export interface GoldenRun {
   created_at?: string;
 }
 
+type KMap = Record<string, number | null>;
+
+export interface Dashboard {
+  overview: {
+    traces: number;
+    judged_traces: number;
+    golden_queries: number;
+    feedback_up: number;
+    feedback_down: number;
+    llm_calls: number;
+  };
+  generation: {
+    series: {
+      run: string;
+      at: string | null;
+      faithfulness: number | null;
+      answer_relevance: number | null;
+      context_utilization: number | null;
+    }[];
+    current: Record<string, number | null>;
+  };
+  retrieval: {
+    series: {
+      run: string;
+      at: string | null;
+      precision: KMap;
+      ndcg: KMap;
+      hit_rate: KMap;
+      mrr: number | null;
+    }[];
+    current: {
+      precision: KMap;
+      ndcg: KMap;
+      hit_rate: KMap;
+      mrr: number | null;
+    } | null;
+  };
+  cost: {
+    series: {
+      day: string;
+      calls: number;
+      prompt_tokens: number;
+      completion_tokens: number;
+      avg_latency_ms: number | null;
+    }[];
+    by_call_type: {
+      call_type: string;
+      calls: number;
+      tokens: number;
+      avg_latency_ms: number | null;
+    }[];
+    totals: { calls: number; tokens: number };
+  };
+  golden: {
+    series: {
+      run_id: number;
+      at: string | null;
+      num_queries: number;
+      aggregate: (MetricBundle & { correctness: number | null }) | null;
+    }[];
+    current: unknown;
+  };
+  k_values: number[];
+}
+
 export interface DocumentMeta {
   doc_id: string;
   title: string | null;
