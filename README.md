@@ -42,7 +42,8 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   + per-chunk relevance) via `python -m interfaces.judge` or an admin endpoint. A
   **golden eval set** (admin authoring UI at `/admin/golden`) re-runs retrieval to
   compute true **Recall@k / Precision@k / MRR / NDCG / Hit Rate** + **Correctness**
-  (answer vs reference).
+  (answer vs reference). An admin **dashboard** (`/admin/dashboard`) visualizes it
+  all — generation/retrieval metrics, cost/latency, golden-run history.
 - **Discord** adapter with live reaction status; **CLI** for local testing.
 
 ## Layout

@@ -265,6 +265,17 @@ the golden relevant set, generates an answer from the reranked top-k and judges 
 the inline results table. These ground-truth metrics (true Recall@k, Correctness)
 are what the reference-free judge can't provide.
 
+### Dashboard (Phase D)
+
+`core/eval/dashboard.py` `DashboardStore` is a **read-only** aggregator (no
+migration) feeding an admin dashboard (`/admin/dashboard`, `GET /admin/dashboard`):
+generation-metric means by judge run, **retrieval metrics computed from the judge's
+chunk labels** over the retrieved set (`core/eval/metrics.py`, Precision@k/NDCG@k/
+Hit@k/MRR, relevance ≥ a threshold), cost/latency/tokens from `llm_calls` grouped by
+day + by `call_type`, and golden-run history. The SPA (`DashboardPage`) renders it
+with dependency-free SVG sparklines + CSS bars (`src/components/charts.tsx`). This
+closes the eval arc: **capture (A) → judge (B) → golden (C) → visualize (D)**.
+
 ## Deferred (next phases)
 
 - Embedding 2D-projection chunk visualiser; streaming chat.

@@ -343,3 +343,19 @@ token-chunked, dense-only, tool-triggered RAG:
 - **Tall results, re-runnable.** Each run is an `eval_golden_runs` row + per-query
   `eval_golden_results`; re-running appends a new run (history kept) rather than
   overwriting.
+
+## Eval dashboard (Phase D)
+
+- **Read-only aggregation, no migration.** `DashboardStore` only reads the existing
+  eval tables; nothing new is stored, so the dashboard can't corrupt data and adds
+  no schema.
+- **Two retrieval views, deliberately.** The dashboard's retrieval panel computes
+  Precision@k/NDCG/MRR/Hit from the **judge's chunk labels over the retrieved set**
+  (online, no gold), while the golden panel shows **true Recall@k** (offline, gold).
+  Both are shown so the gap between "looks good on what we retrieved" and "found
+  what actually exists" is visible.
+- **Hybrid trend axes.** Generation/retrieval trend **by judge run**, golden **by
+  golden run**, cost/latency **by day** — each metric's natural cadence, which keeps
+  sparklines meaningful even at low data volume (a daily axis would be mostly empty).
+- **Dependency-free charts.** Tiny SVG sparkline + CSS bars (`charts.tsx`) instead
+  of a chart library — the dashboard added ~7 KB gzipped, not hundreds.
