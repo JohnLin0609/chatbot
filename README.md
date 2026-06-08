@@ -29,6 +29,11 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   Slides chunk one-per-slide with the heading carried into the citation label
   (`[1] (W14 例外處理 — 錯誤的種類) …`); uploads can **skip leading/trailing
   slides** (cover / agenda / closing) via `skip_leading` / `skip_trailing`.
+- **Slide ↔ code binding**: example code (`POST /ingest/code`) is ingested with
+  filterable payload fields (`content_type` / `lecture` / `topic` / `language` /
+  `source_file`); when a retrieved **slide** has a `lecture`, its matching example
+  **code** (same week, derived from the `W##` filename) is pulled into the prompt
+  alongside the explanation. Toggle with `rag_pair_code_enabled`.
 - **Session lifecycle**: 10-min hot-cache TTL; a worker **idle-sweeper** finalises
   ended sessions into tier-2 summary + tier-3 facts so short chats still persist.
   The web conversation list is **isolated per account** and capped at **20**

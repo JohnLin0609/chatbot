@@ -157,6 +157,16 @@ fused **Top 3**; complex → hybrid retrieve a larger candidate set → **rerank
 injected into the prompt (`core/memory/context_builder.py`), then the tool loop
 runs.
 
+**Slide → code binding.** After the final chunks are chosen, `_pair_code`
+(`core/pipeline.py`) looks at each retrieved **slide** chunk's `lecture` and
+fetches its paired **code** chunk (`vector_store.fetch_paired(content_type="code",
+lecture)`), injecting the runnable example alongside the explanation — additive
+(beyond top_k), deduped by lecture and against already-retrieved chunks, capped by
+`rag_pair_code_max`, gated by `rag_pair_code_enabled`. Pairing is by week number
+(derived from the `W##` filename), so it needs no manual cross-references. The
+example code is cited as `(W05 — code: W05_條件判斷.py)` and tagged `paired` in the
+eval trace.
+
 Retrieval (`core/rag/retriever.py`) is **hybrid**: each chunk has a dense vector
 (OpenAI `text-embedding-3-small`) and a BM25 **sparse** vector (fastembed,
 `core/rag/sparse.py`, with jieba CJK segmentation) in a Qdrant **named-vector**
@@ -165,9 +175,15 @@ collection (sparse config uses `Modifier.IDF`); the Query API fuses both with
 `enabled=true`.
 
 Curated documents are ingested via the unified API (`interfaces/api_app.py`, admin-only):
-`POST /ingest` (text) or `POST /ingest/pptx` (slides). Chunking is **per
+`POST /ingest` (text), `POST /ingest/pptx` (slides), or `POST /ingest/code`
+(example `.py`, one chunk per file). Code is stamped with **top-level (filterable)
+payload fields** `content_type` / `lecture` / `topic` / `language` / `source_file`
+(slides get `content_type="slide"` + `lecture` too) — promoted out of the nested
+`metadata` because Qdrant filters only match top-level keys, which is what makes
+the slide→code pairing fetch possible. Chunking is **per
 document type** (`core/rag/chunkers.py`): slides (one chunk per slide), prose
-(spaCy sentence-grouping with overlap), token (fixed windows). Slide decks vary,
+(spaCy sentence-grouping with overlap), token (fixed windows), code (one chunk per
+file). Slide decks vary,
 so the upload form takes **`skip_leading` / `skip_trailing`** counts that drop
 cover / agenda / closing slides before chunking (kept slides retain their
 original `slide_number`); skipping every slide is a 422. For slides the
