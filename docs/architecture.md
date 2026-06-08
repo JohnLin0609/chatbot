@@ -167,7 +167,14 @@ collection (sparse config uses `Modifier.IDF`); the Query API fuses both with
 Curated documents are ingested via the unified API (`interfaces/api_app.py`, admin-only):
 `POST /ingest` (text) or `POST /ingest/pptx` (slides). Chunking is **per
 document type** (`core/rag/chunkers.py`): slides (one chunk per slide), prose
-(spaCy sentence-grouping with overlap), token (fixed windows). A Postgres
+(spaCy sentence-grouping with overlap), token (fixed windows). For slides the
+heading leads the chunk text and is also kept in `metadata.title` — when a deck
+doesn't use the title *placeholder* (common), `parse_pptx` falls back to the
+first body line. The week/deck context is surfaced at **injection time** via the
+citation label (`_source_label` in `core/pipeline.py` → `[1] (W14 例外處理 —
+錯誤的種類) …`), not embedded into the chunk text: an A/B over a golden set
+showed a constant per-deck prefix slightly hurt retrieval (Recall@5 1.0→0.94)
+while adding no signal the cited source didn't already carry. A Postgres
 `documents` registry (`core/documents/store.py`) tracks each doc and its
 `enabled` flag (mirrored to the Qdrant payload); `GET /documents/{id}/chunks`
 feeds the future chunk visualiser. The payload carries `source`/`user_key`/

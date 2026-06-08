@@ -3,12 +3,28 @@ medium uses fused top-k, complex reranks."""
 
 from types import SimpleNamespace
 
-from core.pipeline import _retrieve_knowledge
+from core.pipeline import _format_knowledge, _retrieve_knowledge, _source_label
 from core.rag.classifier import COMPLEX, MEDIUM, SIMPLE
 from core.rag.vector_store import Hit
 from tests.conftest import make_settings
 
 H = [Hit(text=f"d{i}", score=1.0, title=None, payload={}) for i in range(5)]
+
+
+def test_source_label_uses_deck_and_slide_title():
+    hit = Hit(text="…", score=1.0, title="W14_例外處理.pptx",
+              payload={"metadata": {"title": "錯誤的種類"}})
+    assert _source_label(hit) == "W14 例外處理 — 錯誤的種類"
+    # injected citation carries the readable label, not the filename
+    assert "(W14 例外處理 — 錯誤的種類)" in _format_knowledge([hit])
+
+
+def test_source_label_fallbacks():
+    # no slide title -> deck only
+    assert _source_label(Hit(text="x", score=1.0, title="W01_intro.pptx",
+                             payload={})) == "W01 intro"
+    # nothing at all -> untitled
+    assert _source_label(Hit(text="x", score=1.0, title=None, payload={})) == "untitled"
 
 
 class FakeClassifier:

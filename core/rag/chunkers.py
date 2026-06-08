@@ -103,7 +103,15 @@ def chunk_token(text: str, counter: TokenCounter, settings: Settings) -> list[Ch
 def chunk_slides(
     slides: list[SlideText], counter: TokenCounter, settings: Settings
 ) -> list[ChunkUnit]:
-    """One chunk per slide; a slide over the token budget is split further."""
+    """One chunk per slide; a slide over the token budget is split further.
+
+    The slide heading (now reliably populated by parse_pptx, even when the deck
+    doesn't use a title placeholder) leads the chunk text and is also kept in
+    `metadata.title` so retrieval/citation can name the slide. The deck/week is
+    surfaced at injection time via the citation label, not embedded into the
+    chunk text (an A/B showed a constant per-deck prefix slightly hurts
+    retrieval without adding signal the cited source doesn't already carry).
+    """
     units: list[ChunkUnit] = []
     ordinal = 0
     for sl in slides:

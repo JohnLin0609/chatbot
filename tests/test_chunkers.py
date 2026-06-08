@@ -54,6 +54,15 @@ def test_chunk_slides_one_per_slide_with_metadata():
     assert "speaker note" in units[1].text  # notes folded in
 
 
+def test_chunk_slides_heading_leads_text_and_metadata_title():
+    # the heading leads the chunk text (no deck prefix in the body) and is also
+    # carried in metadata.title for citation/display.
+    slides = [SlideText(index=1, title="錯誤的種類", body="語法錯誤與執行時例外")]
+    units = chunk_slides(slides, C, make_settings(ingest_chunk_tokens=512))
+    assert units[0].text == "錯誤的種類\n語法錯誤與執行時例外"
+    assert units[0].metadata["title"] == "錯誤的種類"
+
+
 def test_chunk_slides_splits_oversized_slide():
     big = " ".join(f"w{i}" for i in range(300))
     slides = [SlideText(index=1, title="Big", body=big)]

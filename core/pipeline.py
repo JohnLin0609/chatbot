@@ -84,11 +84,25 @@ def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
     )
 
 
+def _source_label(hit) -> str:
+    """A human-readable citation label: deck (from the doc title, extension
+    stripped) plus the slide heading when available — e.g.
+    `W14 例外處理 — 錯誤的種類`. Falls back to the raw title / "untitled"."""
+    deck = hit.title or ""
+    for ext in (".pptx", ".ppt"):
+        if deck.lower().endswith(ext):
+            deck = deck[: -len(ext)]
+            break
+    deck = deck.replace("_", " ").strip()
+    slide = ((hit.payload or {}).get("metadata") or {}).get("title")
+    parts = [p for p in (deck, (slide or "").strip()) if p]
+    return " — ".join(parts) or "untitled"
+
+
 def _format_knowledge(hits) -> str:
     lines = []
     for i, hit in enumerate(hits, start=1):
-        title = hit.title or "untitled"
-        lines.append(f"[{i}] ({title}) {hit.text}")
+        lines.append(f"[{i}] ({_source_label(hit)}) {hit.text}")
     return "\n".join(lines)
 
 

@@ -39,7 +39,13 @@ def parse_pptx(data: bytes) -> list[SlideText]:
         notes = ""
         if slide.has_notes_slide:
             notes = (slide.notes_slide.notes_text_frame.text or "").strip()
-        slides.append(
-            SlideText(index=i, title=title, body="\n".join(body_parts), notes=notes)
-        )
+        body = "\n".join(body_parts).strip()
+        # Many decks don't use the title *placeholder* — the heading is just the
+        # first text box. When the placeholder is empty, fall back to the first
+        # line of the body as the title and drop it from the body (so it isn't
+        # duplicated once it's re-prefixed onto the chunk).
+        if not title and body:
+            head, _, rest = body.partition("\n")
+            title, body = head.strip(), rest.strip()
+        slides.append(SlideText(index=i, title=title, body=body, notes=notes))
     return slides
