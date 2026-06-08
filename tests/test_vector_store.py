@@ -37,6 +37,33 @@ def test_payload_has_source():
     assert pl["doc_id"] == "d" and pl["title"] == "T"
 
 
+def test_payload_classification_fields_default_none_and_set():
+    bare = VectorPoint(doc_id="d", chunk_index=0, vector=[0.1], text="t").payload()
+    for k in ("content_type", "lecture", "topic", "language", "source_file"):
+        assert bare[k] is None
+    p = VectorPoint(doc_id="d", chunk_index=0, vector=[0.1], text="t",
+                    content_type="code", lecture=5, topic="conditionals",
+                    language="python", source_file="W05_條件判斷.py").payload()
+    assert p["content_type"] == "code" and p["lecture"] == 5
+    assert p["language"] == "python" and p["source_file"] == "W05_條件判斷.py"
+
+
+async def test_fetch_paired_filters_and_maps(store):
+    pt = MagicMock(payload={"text": "code body", "title": "W05_條件判斷.py",
+                            "chunk_index": 0, "content_type": "code", "lecture": 5})
+    store._mock.scroll = AsyncMock(return_value=([pt], None))
+    hits = await store.fetch_paired("code", 5, limit=3)
+    assert hits and hits[0].text == "code body" and hits[0].score == 0.0
+    flt = store._mock.scroll.call_args.kwargs["scroll_filter"]
+    keys = {c.key for c in flt.must}
+    assert keys == {"content_type", "lecture", "source", "enabled"}
+
+
+async def test_fetch_paired_empty_on_error(store):
+    store._mock.scroll = AsyncMock(side_effect=RuntimeError("down"))
+    assert await store.fetch_paired("code", 5) == []
+
+
 async def test_ensure_collection_creates_named_dense_and_sparse(store):
     await store.ensure_collection()
     store._mock.create_collection.assert_awaited_once()

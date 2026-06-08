@@ -181,6 +181,8 @@ export interface TraceChunk {
   rerank_score: number | null;
   final_rank: number | null;
   included: boolean;
+  content_type: string | null;
+  paired: boolean;
 }
 
 export interface TraceJudge {

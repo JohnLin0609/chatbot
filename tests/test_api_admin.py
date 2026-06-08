@@ -44,19 +44,25 @@ class FakeIngest:
     def __init__(self, pptx_error=False):
         self.call = None
         self.pptx_call = None
+        self.code_call = None
         self._pptx_error = pptx_error
 
     async def ingest_text(self, text, *, title=None, doc_type="prose", metadata=None, doc_id=None):
         self.call = dict(text=text, title=title, doc_type=doc_type)
         return ("new-doc", 3)
 
-    async def ingest_pptx(self, data, *, title=None, metadata=None, doc_id=None,
-                          skip_leading=0, skip_trailing=0):
+    async def ingest_pptx(self, data, *, title=None, source_file=None, metadata=None,
+                          doc_id=None, skip_leading=0, skip_trailing=0):
         if self._pptx_error:
             raise ValueError("bad pptx")
-        self.pptx_call = dict(nbytes=len(data), title=title,
+        self.pptx_call = dict(nbytes=len(data), title=title, source_file=source_file,
                               skip_leading=skip_leading, skip_trailing=skip_trailing)
         return ("deck-doc", 5)
+
+    async def ingest_code(self, text, *, title=None, source_file=None, topic=None,
+                          metadata=None, doc_id=None):
+        self.code_call = dict(text=text, title=title, source_file=source_file, topic=topic)
+        return ("code-doc", 1)
 
 
 def _user():
@@ -184,6 +190,34 @@ async def test_ingest_pptx_negative_skip_422(app):
     async with await _client(app) as c:
         r = await c.post("/ingest/pptx", files=files, data={"skip_leading": "-1"},
                          headers={"Authorization": "Bearer x"})
+    assert r.status_code == 422
+
+
+async def test_ingest_code_admin_ok(app):
+    app.dependency_overrides[get_current_user] = _admin
+    files = {"file": ("W05_條件判斷.py", "def f():\n    return 1\n".encode(), "text/x-python")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/code", files=files, data={"topic": "conditionals"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert r.json() == {"doc_id": "code-doc", "chunks_ingested": 1}
+    assert app.state.ingest.code_call["topic"] == "conditionals"
+    assert app.state.ingest.code_call["source_file"] == "W05_條件判斷.py"
+
+
+async def test_ingest_code_forbidden_for_user(app):
+    app.dependency_overrides[get_current_user] = _user
+    files = {"file": ("x.py", b"x=1", "text/x-python")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/code", files=files, headers={"Authorization": "Bearer x"})
+    assert r.status_code == 403
+
+
+async def test_ingest_code_non_utf8_422(app):
+    app.dependency_overrides[get_current_user] = _admin
+    files = {"file": ("bad.py", b"\xff\xfe\x00bad", "application/octet-stream")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/code", files=files, headers={"Authorization": "Bearer x"})
     assert r.status_code == 422
 
 

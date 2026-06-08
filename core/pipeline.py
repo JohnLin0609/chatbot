@@ -87,15 +87,23 @@ def _outbound(inbound: InboundEvent, *, text: str = "", status: str = "ok",
 def _source_label(hit) -> str:
     """A human-readable citation label: deck (from the doc title, extension
     stripped) plus the slide heading when available — e.g.
-    `W14 例外處理 — 錯誤的種類`. Falls back to the raw title / "untitled"."""
+    `W14 例外處理 — 錯誤的種類`. Code chunks read `W05 conditionals — code:
+    W05_條件判斷.py`. Falls back to the raw title / "untitled"."""
+    p = hit.payload or {}
+    if p.get("content_type") == "code":
+        lec = p.get("lecture")
+        wk = f"W{lec:02d}" if isinstance(lec, int) else ""
+        fname = p.get("source_file") or hit.title or "code"
+        head = " ".join(x for x in (wk, (p.get("topic") or "").strip()) if x)
+        return f"{head} — code: {fname}".lstrip(" —") if head else f"code: {fname}"
     deck = hit.title or ""
     for ext in (".pptx", ".ppt"):
         if deck.lower().endswith(ext):
             deck = deck[: -len(ext)]
             break
     deck = deck.replace("_", " ").strip()
-    slide = ((hit.payload or {}).get("metadata") or {}).get("title")
-    parts = [p for p in (deck, (slide or "").strip()) if p]
+    slide = (p.get("metadata") or {}).get("title")
+    parts = [s for s in (deck, (slide or "").strip()) if s]
     return " — ".join(parts) or "untitled"
 
 
@@ -119,7 +127,43 @@ def _candidate(hit, fused_rank: int) -> "CandidateRecord":
         fused_score=hit.score,
         fused_rank=fused_rank,
         rerank_score=getattr(hit, "rerank_score", None),
+        content_type=p.get("content_type"),
     )
+
+
+async def _pair_code(deps: "PipelineDeps", final: list, candidates: list) -> list:
+    """For each retrieved *slide* hit, fetch its paired example *code* (same
+    lecture) so explanation + runnable example arrive together. Additive (beyond
+    top_k), deduped by lecture and against already-retrieved chunks, capped."""
+    settings = deps.settings
+    if not getattr(settings, "rag_pair_code_enabled", False):
+        return []
+    store = getattr(deps, "vector_store", None)
+    if store is None:
+        return []
+    cap = settings.rag_pair_code_max
+    present = {((h.payload or {}).get("doc_id"), (h.payload or {}).get("chunk_index"))
+               for h in candidates}
+    seen_lectures: set = set()
+    paired: list = []
+    for h in final:
+        p = h.payload or {}
+        if p.get("content_type") != "slide":
+            continue
+        lec = p.get("lecture")
+        if lec is None or lec in seen_lectures:
+            continue
+        seen_lectures.add(lec)
+        for code_hit in await store.fetch_paired("code", lec, limit=cap):
+            cp = code_hit.payload or {}
+            key = (cp.get("doc_id"), cp.get("chunk_index"))
+            if key in present:
+                continue
+            present.add(key)
+            paired.append(code_hit)
+            if len(paired) >= cap:
+                return paired
+    return paired
 
 
 async def _retrieve_knowledge(
@@ -165,8 +209,18 @@ async def _retrieve_knowledge(
                 rec.included = True
                 rec.final_rank = final_ids[id(h)]
                 rec.rerank_score = getattr(h, "rerank_score", None)
+
+        # Slide → code binding: pull each retrieved slide's paired example code
+        # and inject it alongside (additive). Recorded in the trace as paired.
+        paired = await _pair_code(deps, final, candidates)
+        for code_hit in paired:
+            rec = _candidate(code_hit, None)
+            rec.included = True
+            rec.paired = True
+            recs.append(rec)
+
         trace = RetrievalTrace(tier=tier, reranked=reranked, candidates=recs)
-        return _format_knowledge(final), trace
+        return _format_knowledge(list(final) + paired), trace
     except Exception:  # noqa: BLE001 — retrieval must never break the reply
         log.warning("knowledge retrieval failed", exc_info=True)
         return "", None

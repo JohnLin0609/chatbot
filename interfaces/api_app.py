@@ -298,7 +298,8 @@ def build_app(
         meta = json.loads(metadata) if metadata else None
         try:
             result_id, count = await request.app.state.ingest.ingest_pptx(
-                data, title=title or file.filename, metadata=meta, doc_id=doc_id,
+                data, title=title or file.filename, source_file=file.filename,
+                metadata=meta, doc_id=doc_id,
                 skip_leading=skip_leading, skip_trailing=skip_trailing,
             )
         except SlideRangeError as exc:
@@ -306,6 +307,23 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=422, detail=f"could not parse pptx: {exc}")
         return {"doc_id": result_id, "chunks_ingested": count}
+
+    @app.post("/ingest/code")
+    async def ingest_code(request: Request, file: UploadFile = File(...),
+                          title: str | None = Form(None), topic: str | None = Form(None),
+                          metadata: str | None = Form(None), doc_id: str | None = Form(None),
+                          _admin: dict = Depends(require_admin)) -> dict:
+        raw = await file.read()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=422, detail="file must be UTF-8 text")
+        meta = json.loads(metadata) if metadata else None
+        doc_id_out, count = await request.app.state.ingest.ingest_code(
+            text, title=title or file.filename, source_file=file.filename,
+            topic=topic, metadata=meta, doc_id=doc_id,
+        )
+        return {"doc_id": doc_id_out, "chunks_ingested": count}
 
     @app.get("/documents")
     async def list_documents(request: Request, _admin: dict = Depends(require_admin)) -> dict:

@@ -5,11 +5,12 @@ slide; prose → spaCy sentence-grouping; token → fixed windows.
 """
 
 import hashlib
+import re
 from datetime import datetime, timezone
 
 from core.config import Settings
 from core.documents.store import DocumentStore
-from core.rag.chunkers import ChunkUnit, chunk_slides, chunk_text_doc
+from core.rag.chunkers import ChunkUnit, chunk_code, chunk_slides, chunk_text_doc
 from core.rag.embeddings import EmbeddingService
 from core.rag.pptx import parse_pptx
 from core.rag.sparse import SparseEmbedder
@@ -19,6 +20,16 @@ from core.tokens.counter import TokenCounter
 
 class SlideRangeError(ValueError):
     """skip_leading/skip_trailing would discard every slide in the deck."""
+
+
+_WEEK_RE = re.compile(r"^[Ww](\d{1,2})")
+
+
+def _lecture_from_filename(name: str | None) -> int | None:
+    """Derive the lecture number from a `W##_…` filename so slides and code pair
+    by week. `W14_例外處理.pptx` -> 14, `W05_條件判斷.py` -> 5, else None."""
+    m = _WEEK_RE.match(name or "")
+    return int(m.group(1)) if m else None
 
 
 def _hash(payload: bytes) -> str:
@@ -76,6 +87,7 @@ class IngestService:
         data: bytes,
         *,
         title: str | None = None,
+        source_file: str | None = None,
         metadata: dict | None = None,
         doc_id: str | None = None,
         skip_leading: int = 0,
@@ -90,7 +102,31 @@ class IngestService:
                 f"would discard all {len(slides)} slides"
             )
         units = chunk_slides(kept, self._counter, self._settings)
-        return await self._commit(units, title, "slides", metadata, doc_id, source_hash)
+        # lecture derives from the real filename (not the admin-editable title) so
+        # pairing survives a renamed deck.
+        src = source_file or title
+        extra = {"content_type": "slide", "lecture": _lecture_from_filename(src),
+                 "topic": None, "language": None, "source_file": src}
+        return await self._commit(units, title, "slides", metadata, doc_id,
+                                  source_hash, extra_fields=extra)
+
+    async def ingest_code(
+        self,
+        text: str,
+        *,
+        title: str | None = None,
+        source_file: str | None = None,
+        topic: str | None = None,
+        metadata: dict | None = None,
+        doc_id: str | None = None,
+    ) -> tuple[str, int]:
+        source_hash = _hash(text.encode())
+        units = chunk_code(text, self._counter, self._settings)
+        src = source_file or title
+        extra = {"content_type": "code", "lecture": _lecture_from_filename(src),
+                 "topic": topic, "language": "python", "source_file": src}
+        return await self._commit(units, title, "code", metadata, doc_id,
+                                  source_hash, extra_fields=extra)
 
     async def _commit(
         self,
@@ -100,6 +136,7 @@ class IngestService:
         metadata: dict | None,
         doc_id: str | None,
         source_hash: str,
+        extra_fields: dict | None = None,
     ) -> tuple[str, int]:
         doc_id = _doc_id(title, source_hash, doc_id)
         if not units:
@@ -114,6 +151,7 @@ class IngestService:
         vectors = await self._embedding.embed(texts)
         sparse = self._sparse.embed_documents(texts) if self._sparse else None
         now = datetime.now(timezone.utc).isoformat()
+        extra = extra_fields or {}
         points = [
             VectorPoint(
                 doc_id=doc_id,
@@ -127,6 +165,7 @@ class IngestService:
                 enabled=True,
                 sparse={"indices": sparse[i].indices, "values": sparse[i].values}
                 if sparse else None,
+                **extra,
             )
             for i, u in enumerate(units)
         ]

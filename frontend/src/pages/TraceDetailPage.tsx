@@ -183,7 +183,14 @@ export default function TraceDetailPage() {
                       onClick={() => setOpen((o) => ({ ...o, [c.id]: !o[c.id] }))}
                       className={`cursor-pointer border-b hover:bg-gray-50 ${c.included ? "" : "text-gray-400"}`}
                     >
-                      <td className="py-1 pr-3">{c.title || c.doc_id || "—"}</td>
+                      <td className="py-1 pr-3">
+                        {c.title || c.doc_id || "—"}
+                        {c.content_type === "code" && (
+                          <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700">
+                            {c.paired ? "code · paired" : "code"}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-1 pr-3 tabular-nums">{c.chunk_index ?? "—"}</td>
                       <td className="py-1 pr-3 tabular-nums">{pct(c.fused_score)}</td>
                       <td className="py-1 pr-3 tabular-nums">{c.fused_rank ?? "—"}</td>

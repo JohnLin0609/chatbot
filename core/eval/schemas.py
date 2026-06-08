@@ -17,6 +17,8 @@ class CandidateRecord:
     rerank_score: float | None = None
     final_rank: int | None = None
     included: bool = False
+    content_type: str | None = None  # "slide" | "code" (from the payload)
+    paired: bool = False  # injected as a slide's paired code, not retrieved
 
 
 @dataclass

@@ -5,6 +5,7 @@ import core.rag.chunkers as ck
 from core.rag.chunkers import (
     ChunkUnit,
     _pack_sentences,
+    chunk_code,
     chunk_prose,
     chunk_slides,
     chunk_token,
@@ -61,6 +62,22 @@ def test_chunk_slides_heading_leads_text_and_metadata_title():
     units = chunk_slides(slides, C, make_settings(ingest_chunk_tokens=512))
     assert units[0].text == "錯誤的種類\n語法錯誤與執行時例外"
     assert units[0].metadata["title"] == "錯誤的種類"
+
+
+def test_chunk_code_whole_file_one_chunk():
+    code = 'def f():\n    return 1\n'
+    units = chunk_code(code, C, make_settings(ingest_chunk_tokens=512))
+    assert len(units) == 1 and units[0].text == code.rstrip()
+
+
+def test_chunk_code_oversized_splits():
+    code = "x = 1\n" * 200
+    units = chunk_code(code, C, make_settings(ingest_chunk_tokens=20, ingest_chunk_overlap=4))
+    assert len(units) > 1
+
+
+def test_chunk_code_empty():
+    assert chunk_code("   \n  ", C, make_settings()) == []
 
 
 def test_chunk_slides_splits_oversized_slide():

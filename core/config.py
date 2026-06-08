@@ -202,6 +202,11 @@ class Settings(BaseSettings):
     rag_complex_candidates: int = 20  # fused top-N fed to the reranker
     rag_complex_top_k: int = 3
 
+    # Slide → code binding: a retrieved slide pulls its paired example code
+    # (same lecture) into the prompt, additively beyond top_k.
+    rag_pair_code_enabled: bool = True
+    rag_pair_code_max: int = 3  # cap on injected paired-code chunks per turn
+
     # Rerank (complex tier only) — local Qwen3-Reranker.
     rag_reranker_enabled: bool = True
     rag_reranker_model: str = "Qwen/Qwen3-Reranker-0.6B"

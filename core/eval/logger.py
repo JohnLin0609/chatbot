@@ -153,6 +153,8 @@ class EvalLogger:
                             rerank_score=c.rerank_score,
                             final_rank=c.final_rank,
                             included=c.included,
+                            content_type=c.content_type,
+                            paired=c.paired,
                         ))
                 await db.commit()
         except Exception:  # noqa: BLE001 — never break the turn

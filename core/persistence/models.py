@@ -301,6 +301,8 @@ class EvalRetrievedChunk(Base):
     rerank_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     final_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     included: Mapped[bool] = mapped_column(default=False, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    paired: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

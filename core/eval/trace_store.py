@@ -241,7 +241,7 @@ def _chunk_dict(c) -> dict:
         "title": c.title, "chunk_text": c.chunk_text,
         "fused_score": _f(c.fused_score), "fused_rank": c.fused_rank,
         "rerank_score": _f(c.rerank_score), "final_rank": c.final_rank,
-        "included": c.included,
+        "included": c.included, "content_type": c.content_type, "paired": c.paired,
     }
 
 

@@ -100,6 +100,17 @@ def chunk_token(text: str, counter: TokenCounter, settings: Settings) -> list[Ch
     return [ChunkUnit(text=c, ordinal=i) for i, c in enumerate(pieces)]
 
 
+def chunk_code(text: str, counter: TokenCounter, settings: Settings) -> list[ChunkUnit]:
+    """One chunk for the whole code file (a small self-contained example), so the
+    LLM sees a runnable unit. Falls back to token windows only if over budget."""
+    text = text.rstrip()
+    if not text.strip():
+        return []
+    if counter.count_text(text) <= settings.ingest_chunk_tokens:
+        return [ChunkUnit(text=text, ordinal=0)]
+    return chunk_token(text, counter, settings)
+
+
 def chunk_slides(
     slides: list[SlideText], counter: TokenCounter, settings: Settings
 ) -> list[ChunkUnit]:

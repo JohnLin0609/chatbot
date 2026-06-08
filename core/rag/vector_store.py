@@ -32,6 +32,14 @@ class VectorPoint:
     created_at: str | None = None
     enabled: bool = True
     sparse: dict | None = None  # {"indices": [...], "values": [...]} when hybrid
+    # Top-level (filterable) classification fields. Promoted out of `metadata`
+    # because Qdrant filters only match top-level payload keys — needed so a
+    # retrieved slide can fetch its paired code by (content_type, lecture).
+    content_type: str | None = None  # "slide" | "code"
+    lecture: int | None = None
+    topic: str | None = None
+    language: str | None = None
+    source_file: str | None = None
 
     def point_id(self) -> str:
         return chunk_point_id(self.doc_id, self.chunk_index)
@@ -48,6 +56,11 @@ class VectorPoint:
             "channel_id": self.channel_id,
             "created_at": self.created_at,
             "enabled": self.enabled,
+            "content_type": self.content_type,
+            "lecture": self.lecture,
+            "topic": self.topic,
+            "language": self.language,
+            "source_file": self.source_file,
         }
 
 
@@ -150,6 +163,36 @@ class QdrantVectorStore:
         payloads = [p.payload or {} for p in points]
         payloads.sort(key=lambda pl: pl.get("chunk_index", 0))
         return payloads
+
+    async def fetch_paired(
+        self, content_type: str, lecture: int, *, limit: int = 5
+    ) -> list[Hit]:
+        """Fetch curated, enabled chunks matching a top-level (content_type,
+        lecture) — used to pull the code chunk(s) paired to a retrieved slide.
+        Returns Hits (score 0; these are injected additively, not ranked).
+        Fault-tolerant (-> [])."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        flt = Filter(must=[
+            FieldCondition(key="content_type", match=MatchValue(value=content_type)),
+            FieldCondition(key="lecture", match=MatchValue(value=lecture)),
+            FieldCondition(key="source", match=MatchValue(value="curated")),
+            FieldCondition(key="enabled", match=MatchValue(value=True)),
+        ])
+        try:
+            points, _ = await self._client.scroll(
+                collection_name=self._collection, scroll_filter=flt,
+                limit=limit, with_payload=True, with_vectors=False,
+            )
+        except Exception:  # noqa: BLE001 — missing collection / transient errors
+            logger.exception("qdrant fetch_paired failed")
+            return []
+        points.sort(key=lambda p: (p.payload or {}).get("chunk_index", 0))
+        return [
+            Hit(text=(p.payload or {}).get("text", ""), score=0.0,
+                title=(p.payload or {}).get("title"), payload=p.payload or {})
+            for p in points
+        ]
 
     def _filter(self, source: str | None, enabled: bool | None):
         from qdrant_client.models import FieldCondition, Filter, MatchValue

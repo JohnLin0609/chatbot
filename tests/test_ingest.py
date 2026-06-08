@@ -3,7 +3,7 @@ avoid loading spaCy in unit tests)."""
 
 import pytest
 
-from core.rag.ingest import IngestService, SlideRangeError
+from core.rag.ingest import IngestService, SlideRangeError, _lecture_from_filename
 from core.tokens.counter import TokenCounter
 from tests.conftest import make_settings
 
@@ -99,3 +99,34 @@ async def test_ingest_pptx_skip_all_raises():
     store = FakeVectorStore()
     with pytest.raises(SlideRangeError):
         await _svc(store).ingest_pptx(_build_pptx(2), skip_leading=2)
+
+
+def test_lecture_from_filename():
+    assert _lecture_from_filename("W14_例外處理.pptx") == 14
+    assert _lecture_from_filename("W05_條件判斷.py") == 5
+    assert _lecture_from_filename("w7_for.py") == 7
+    assert _lecture_from_filename("notes.txt") is None
+    assert _lecture_from_filename(None) is None
+
+
+async def test_ingest_pptx_stamps_content_type_and_lecture():
+    store = FakeVectorStore()
+    await _svc(store).ingest_pptx(_build_pptx(2), title="Deck",
+                                  source_file="W08_期中複習.pptx")
+    p = store.upserted[0]
+    assert p.content_type == "slide" and p.lecture == 8
+    assert p.source_file == "W08_期中複習.pptx" and p.language is None
+
+
+async def test_ingest_code_one_chunk_with_fields():
+    store = FakeVectorStore()
+    svc = IngestService(make_settings(ingest_chunk_tokens=512), FakeEmbedding(), store, C)
+    code = '"""第 5 週 範例"""\ndef pass_or_fail(s):\n    return s >= 60\n'
+    doc_id, n = await svc.ingest_code(
+        code, title="W05_條件判斷.py", source_file="W05_條件判斷.py", topic="conditionals")
+    assert n == 1
+    p = store.upserted[0]
+    assert p.content_type == "code" and p.lecture == 5
+    assert p.language == "python" and p.topic == "conditionals"
+    assert p.source_file == "W05_條件判斷.py"
+    assert "pass_or_fail" in p.text

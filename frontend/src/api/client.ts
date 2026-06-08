@@ -149,6 +149,14 @@ export const ingestPptx = (
   return apiFetch<IngestResult>("/ingest/pptx", { method: "POST", form });
 };
 
+export const ingestCode = (file: File, title: string, topic: string) => {
+  const form = new FormData();
+  form.append("file", file);
+  if (title) form.append("title", title);
+  if (topic) form.append("topic", topic);
+  return apiFetch<IngestResult>("/ingest/code", { method: "POST", form });
+};
+
 export const deleteSession = (conversationId: string) =>
   apiFetch<void>(`/sessions/${encodeURIComponent(conversationId)}`, {
     method: "DELETE",
