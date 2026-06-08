@@ -135,10 +135,17 @@ export const ingestText = (text: string, title: string, doc_type: string) =>
     body: { text, title: title || null, doc_type },
   });
 
-export const ingestPptx = (file: File, title: string) => {
+export const ingestPptx = (
+  file: File,
+  title: string,
+  skipLeading = 0,
+  skipTrailing = 0,
+) => {
   const form = new FormData();
   form.append("file", file);
   if (title) form.append("title", title);
+  form.append("skip_leading", String(skipLeading));
+  form.append("skip_trailing", String(skipTrailing));
   return apiFetch<IngestResult>("/ingest/pptx", { method: "POST", form });
 };
 

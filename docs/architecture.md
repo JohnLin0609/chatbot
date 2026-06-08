@@ -167,7 +167,10 @@ collection (sparse config uses `Modifier.IDF`); the Query API fuses both with
 Curated documents are ingested via the unified API (`interfaces/api_app.py`, admin-only):
 `POST /ingest` (text) or `POST /ingest/pptx` (slides). Chunking is **per
 document type** (`core/rag/chunkers.py`): slides (one chunk per slide), prose
-(spaCy sentence-grouping with overlap), token (fixed windows). For slides the
+(spaCy sentence-grouping with overlap), token (fixed windows). Slide decks vary,
+so the upload form takes **`skip_leading` / `skip_trailing`** counts that drop
+cover / agenda / closing slides before chunking (kept slides retain their
+original `slide_number`); skipping every slide is a 422. For slides the
 heading leads the chunk text and is also kept in `metadata.title` — when a deck
 doesn't use the title *placeholder* (common), `parse_pptx` falls back to the
 first body line. The week/deck context is surfaced at **injection time** via the

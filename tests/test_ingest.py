@@ -1,11 +1,29 @@
 """IngestService tests with fake embedding + vector store (doc_type="token" to
 avoid loading spaCy in unit tests)."""
 
-from core.rag.ingest import IngestService
+import pytest
+
+from core.rag.ingest import IngestService, SlideRangeError
 from core.tokens.counter import TokenCounter
 from tests.conftest import make_settings
 
 C = TokenCounter()
+
+
+def _build_pptx(n: int) -> bytes:
+    from io import BytesIO
+
+    from pptx import Presentation
+
+    prs = Presentation()
+    layout = prs.slide_layouts[1]  # title + content
+    for i in range(1, n + 1):
+        s = prs.slides.add_slide(layout)
+        s.shapes.title.text = f"Slide {i}"
+        s.placeholders[1].text = f"body {i}"
+    buf = BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
 
 
 class FakeEmbedding:
@@ -63,3 +81,21 @@ async def test_empty_text_no_chunks():
     _doc_id, n = await _svc(store).ingest_text("   ", doc_type="token")
     assert n == 0
     assert store.upserted == []
+
+
+async def test_ingest_pptx_skips_leading_and_trailing():
+    store = FakeVectorStore()
+    data = _build_pptx(4)  # slides 1..4
+    _doc_id, n = await _svc(store).ingest_pptx(
+        data, title="Deck", skip_leading=1, skip_trailing=1
+    )
+    assert n == 2
+    # cover (1) + closing (4) dropped; slide_number provenance is preserved
+    nums = [p.payload()["metadata"]["slide_number"] for p in store.upserted]
+    assert nums == [2, 3]
+
+
+async def test_ingest_pptx_skip_all_raises():
+    store = FakeVectorStore()
+    with pytest.raises(SlideRangeError):
+        await _svc(store).ingest_pptx(_build_pptx(2), skip_leading=2)

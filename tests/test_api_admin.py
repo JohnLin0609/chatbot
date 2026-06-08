@@ -50,10 +50,12 @@ class FakeIngest:
         self.call = dict(text=text, title=title, doc_type=doc_type)
         return ("new-doc", 3)
 
-    async def ingest_pptx(self, data, *, title=None, metadata=None, doc_id=None):
+    async def ingest_pptx(self, data, *, title=None, metadata=None, doc_id=None,
+                          skip_leading=0, skip_trailing=0):
         if self._pptx_error:
             raise ValueError("bad pptx")
-        self.pptx_call = dict(nbytes=len(data), title=title)
+        self.pptx_call = dict(nbytes=len(data), title=title,
+                              skip_leading=skip_leading, skip_trailing=skip_trailing)
         return ("deck-doc", 5)
 
 
@@ -161,6 +163,27 @@ async def test_ingest_pptx_bad_file_422(app):
     files = {"file": ("deck.pptx", b"not-a-pptx", "application/octet-stream")}
     async with await _client(app) as c:
         r = await c.post("/ingest/pptx", files=files, headers={"Authorization": "Bearer x"})
+    assert r.status_code == 422
+
+
+async def test_ingest_pptx_forwards_skip_params(app):
+    app.dependency_overrides[get_current_user] = _admin
+    files = {"file": ("deck.pptx", b"PK\x03\x04fake", "application/vnd.ms-powerpoint")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/pptx", files=files,
+                         data={"skip_leading": "2", "skip_trailing": "1"},
+                         headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert app.state.ingest.pptx_call["skip_leading"] == 2
+    assert app.state.ingest.pptx_call["skip_trailing"] == 1
+
+
+async def test_ingest_pptx_negative_skip_422(app):
+    app.dependency_overrides[get_current_user] = _admin
+    files = {"file": ("deck.pptx", b"x", "application/octet-stream")}
+    async with await _client(app) as c:
+        r = await c.post("/ingest/pptx", files=files, data={"skip_leading": "-1"},
+                         headers={"Authorization": "Bearer x"})
     assert r.status_code == 422
 
 

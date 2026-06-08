@@ -17,8 +17,22 @@ from core.rag.vector_store import QdrantVectorStore, VectorPoint
 from core.tokens.counter import TokenCounter
 
 
+class SlideRangeError(ValueError):
+    """skip_leading/skip_trailing would discard every slide in the deck."""
+
+
 def _hash(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def _trim_slides(slides: list, skip_leading: int, skip_trailing: int) -> list:
+    """Drop `skip_leading` slides from the front and `skip_trailing` from the
+    back (e.g. cover / agenda / closing slides). Slide numbers are preserved on
+    the kept slides so provenance still reflects the original deck position."""
+    lead = max(0, skip_leading)
+    trail = max(0, skip_trailing)
+    end = len(slides) - trail
+    return slides[lead:end] if end > lead else []
 
 
 def _doc_id(title: str | None, source_hash: str, given: str | None) -> str:
@@ -64,10 +78,18 @@ class IngestService:
         title: str | None = None,
         metadata: dict | None = None,
         doc_id: str | None = None,
+        skip_leading: int = 0,
+        skip_trailing: int = 0,
     ) -> tuple[str, int]:
         source_hash = _hash(data)
         slides = parse_pptx(data)
-        units = chunk_slides(slides, self._counter, self._settings)
+        kept = _trim_slides(slides, skip_leading, skip_trailing)
+        if slides and not kept:
+            raise SlideRangeError(
+                f"skip_leading ({skip_leading}) + skip_trailing ({skip_trailing}) "
+                f"would discard all {len(slides)} slides"
+            )
+        units = chunk_slides(kept, self._counter, self._settings)
         return await self._commit(units, title, "slides", metadata, doc_id, source_hash)
 
     async def _commit(

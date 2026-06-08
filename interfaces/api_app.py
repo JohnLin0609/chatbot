@@ -31,7 +31,7 @@ from core.persistence import repository as repo
 from core.settings.store import SYSTEM_PROMPT_KEY, AppSettingStore
 from core.persistence.db import create_engine, create_sessionmaker
 from core.rag.embeddings import build_embedding_service
-from core.rag.ingest import IngestService
+from core.rag.ingest import IngestService, SlideRangeError
 from core.rag.sparse import build_sparse_embedder
 from core.rag.vector_store import QdrantVectorStore
 from core.tokens.counter import TokenCounter
@@ -289,13 +289,20 @@ def build_app(
     async def ingest_pptx(request: Request, file: UploadFile = File(...),
                           title: str | None = Form(None), metadata: str | None = Form(None),
                           doc_id: str | None = Form(None),
+                          skip_leading: int = Form(0), skip_trailing: int = Form(0),
                           _admin: dict = Depends(require_admin)) -> dict:
+        if skip_leading < 0 or skip_trailing < 0:
+            raise HTTPException(status_code=422,
+                                detail="skip_leading / skip_trailing must be >= 0")
         data = await file.read()
         meta = json.loads(metadata) if metadata else None
         try:
             result_id, count = await request.app.state.ingest.ingest_pptx(
                 data, title=title or file.filename, metadata=meta, doc_id=doc_id,
+                skip_leading=skip_leading, skip_trailing=skip_trailing,
             )
+        except SlideRangeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=422, detail=f"could not parse pptx: {exc}")
         return {"doc_id": result_id, "chunks_ingested": count}
