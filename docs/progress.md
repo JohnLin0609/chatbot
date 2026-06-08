@@ -1,7 +1,8 @@
 # Progress
 
-Status snapshot. Backend tests green: **204 unit + 4 integration** (`pytest`).
-Frontend: **16 tests** (`cd frontend && npm run test`).
+Status snapshot. Backend tests green: **264 unit + 4 integration** (`pytest`; the
+live round-trip skips rather than fails if the LLM API stalls).
+Frontend: **29 tests** (`cd frontend && npm run test`).
 
 > The chatbot is a **control console** (chat UI + admin RAG management + chunk
 > visualiser + auth), built in phases — all done: **Phase 1 = backend RAG

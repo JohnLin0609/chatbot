@@ -202,7 +202,8 @@ The **Phase-3 SPA** (`frontend/`, React + Vite + TS + Tailwind) consumes this AP
 over JWT bearer: login/register, a chat tester (per-account conversation list in
 localStorage, capped at 20 with oldest-eviction; per-reply 👍/👎), and an admin
 console (upload text/`.pptx`, document enable/disable, chunk inspector, a global
-**System Prompt** editor, and a **feedback summary**). Dev-served by Vite; in
+**System Prompt** editor, a **feedback summary**, a **Golden** authoring page, and
+an **eval Dashboard**). Dev-served by Vite; in
 Docker it's built to static `dist/` and served by nginx, which reverse-proxies the
 API under `/api/` (single origin, no CORS, no SPA-vs-API path collisions).
 

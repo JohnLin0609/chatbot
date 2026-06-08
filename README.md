@@ -66,7 +66,7 @@ interfaces/
   discord_app.py  Discord gateway bot
   cli.py        local fake adapter
 shared/       event contracts, redis client, progress channel
-migrations/   Alembic (0001..0005)
+migrations/   Alembic (0001..0010)
 frontend/     React + Vite + TS + Tailwind SPA (chat + admin console)
 docs/         architecture, development, deployment, decisions, roadmap, progress
 ```
