@@ -43,7 +43,10 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   **golden eval set** (admin authoring UI at `/admin/golden`) re-runs retrieval to
   compute true **Recall@k / Precision@k / MRR / NDCG / Hit Rate** + **Correctness**
   (answer vs reference). An admin **dashboard** (`/admin/dashboard`) visualizes it
-  all — generation/retrieval metrics, cost/latency, golden-run history.
+  all — generation/retrieval metrics, cost/latency, golden-run history. An admin
+  **trace viewer** (`/admin/eval/traces`) drills into a single turn: the prompt is
+  decomposed into its semantic layers (system / summary / memory / RAG / history /
+  query) with per-layer token shares, plus the retrieval candidates and judge scores.
 - **Discord** adapter with live reaction status; **CLI** for local testing.
 
 ## Layout

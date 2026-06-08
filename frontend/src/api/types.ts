@@ -138,6 +138,95 @@ export interface Dashboard {
   k_values: number[];
 }
 
+// ---- eval trace debug viewer ------------------------------------------------
+export interface TraceListRow {
+  id: number;
+  created_at: string | null;
+  user_id: string | null;
+  session_key: string | null;
+  rag_tier: string | null;
+  reranked: boolean;
+  query_preview: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_latency_ms: number | null;
+  model: string | null;
+  provider: string | null;
+}
+
+export interface TraceList {
+  traces: TraceListRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PromptSegment {
+  kind: string;
+  label: string;
+  content: string;
+  tokens: number;
+  pct: number;
+  turns?: { role: string; content: string }[];
+}
+
+export interface TraceChunk {
+  id: number;
+  doc_id: string | null;
+  chunk_index: number | null;
+  title: string | null;
+  chunk_text: string | null;
+  fused_score: number | null;
+  fused_rank: number | null;
+  rerank_score: number | null;
+  final_rank: number | null;
+  included: boolean;
+}
+
+export interface TraceJudge {
+  run_id: string | null;
+  at: string | null;
+  provider: string | null;
+  model: string | null;
+  metrics: { metric: string; score: number | null; reasoning: string | null }[];
+  chunk_labels: {
+    chunk_ref_id: number | null;
+    title: string | null;
+    relevance: number | null;
+    reasoning: string | null;
+  }[];
+}
+
+export interface TraceDetail {
+  trace: {
+    id: number;
+    created_at: string | null;
+    user_id: string | null;
+    session_key: string | null;
+    conversation_id: string | null;
+    query: string | null;
+    rag_tier: string | null;
+    reranked: boolean;
+    reply_text: string | null;
+    reply_message_id: number | null;
+    system_prompt: string | null;
+    knowledge_text: string | null;
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    model: string | null;
+    provider: string | null;
+    tool_calls_count: number;
+    retrieval_latency_ms: number | null;
+    generation_latency_ms: number | null;
+    total_latency_ms: number | null;
+  };
+  segments: PromptSegment[];
+  messages: { role: string; content: string }[] | null;
+  bodies_logged: boolean;
+  chunks: TraceChunk[];
+  judge: TraceJudge | null;
+}
+
 export interface DocumentMeta {
   doc_id: string;
   title: string | null;

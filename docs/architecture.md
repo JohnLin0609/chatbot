@@ -202,8 +202,9 @@ The **Phase-3 SPA** (`frontend/`, React + Vite + TS + Tailwind) consumes this AP
 over JWT bearer: login/register, a chat tester (per-account conversation list in
 localStorage, capped at 20 with oldest-eviction; per-reply 👍/👎), and an admin
 console (upload text/`.pptx`, document enable/disable, chunk inspector, a global
-**System Prompt** editor, a **feedback summary**, a **Golden** authoring page, and
-an **eval Dashboard**). Dev-served by Vite; in
+**System Prompt** editor, a **feedback summary**, a **Golden** authoring page, an
+**eval Dashboard**, and a **Traces** prompt-structure debug viewer). Dev-served by
+Vite; in
 Docker it's built to static `dist/` and served by nginx, which reverse-proxies the
 API under `/api/` (single origin, no CORS, no SPA-vs-API path collisions).
 
@@ -276,6 +277,21 @@ Hit@k/MRR, relevance ≥ a threshold), cost/latency/tokens from `llm_calls` grou
 day + by `call_type`, and golden-run history. The SPA (`DashboardPage`) renders it
 with dependency-free SVG sparklines + CSS bars (`src/components/charts.tsx`). This
 closes the eval arc: **capture (A) → judge (B) → golden (C) → visualize (D)**.
+
+### Trace debug viewer
+
+`core/eval/trace_store.py` `TraceStore` is a second **read-only** reader over the
+same tables, for inspecting a **single turn** rather than aggregates. `GET
+/admin/eval/traces` lists traces (reverse-chron, filterable by tier / user /
+session); `GET /admin/eval/traces/{id}` returns one turn fully decomposed. The
+centerpiece is **server-side prompt-structure splitting**: the stored `messages`
+array is parsed back (against the exact prefixes `build_context` emits) into its
+labelled semantic layers — system prompt / channel summary / user memory / RAG
+knowledge / tier-1 history / current query — each with an estimated token count and
+share. The detail bundle also carries the full retrieval-candidate table (scores /
+ranks / included) and the latest judge run's scores + chunk labels. The SPA
+(`TracesPage` + `TraceDetailPage`) is purely presentational; it degrades gracefully
+when `eval_log_message_bodies=false` (metadata/tokens only).
 
 ## Deferred (next phases)
 

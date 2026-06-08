@@ -27,6 +27,7 @@ export default function NavBar() {
           {navLink("/", "Chat")}
           {user?.role === "admin" && navLink("/admin", "Admin")}
           {user?.role === "admin" && navLink("/admin/dashboard", "Dashboard")}
+          {user?.role === "admin" && navLink("/admin/eval/traces", "Traces")}
           {user?.role === "admin" &&
             navLink("/admin/system-prompt", "System Prompt")}
           {user?.role === "admin" && navLink("/admin/golden", "Golden")}

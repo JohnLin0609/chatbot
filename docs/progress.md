@@ -1,8 +1,8 @@
 # Progress
 
-Status snapshot. Backend tests green: **264 unit + 4 integration** (`pytest`; the
+Status snapshot. Backend tests green: **271 unit + 4 integration** (`pytest`; the
 live round-trip skips rather than fails if the LLM API stalls).
-Frontend: **29 tests** (`cd frontend && npm run test`).
+Frontend: **32 tests** (`cd frontend && npm run test`).
 
 > The chatbot is a **control console** (chat UI + admin RAG management + chunk
 > visualiser + auth), built in phases — all done: **Phase 1 = backend RAG
@@ -81,6 +81,13 @@ Identity: tiers 1-2 keyed `platform:channel_id`; tiers 3-4 keyed `platform:user_
   from judge chunk labels, cost/latency by day + call_type, golden-run history —
   with dependency-free SVG/CSS charts. Read-only aggregation (`DashboardStore`), no
   migration.
+- **Trace debug viewer**: an admin **Traces** page (`/admin/eval/traces` list +
+  `/admin/eval/traces/{id}` detail) for inspecting a **single turn**. The stored
+  `messages` array is split **server-side** (`TraceStore`) back into its labelled
+  semantic layers (system prompt / channel summary / user memory / RAG knowledge /
+  tier-1 history / current query), each with a token count + share, alongside the
+  full retrieval-candidate table and the latest judge scores. Read-only, no
+  migration; degrades gracefully when message bodies aren't logged.
 
 ## Test inventory
 
@@ -102,13 +109,14 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_classifier.py`, `test_retriever.py`, `test_adaptive_rag.py`, `test_reranker.py` | Adaptive-RAG: classifier tiers, hybrid retrieve, routing (simple/medium/complex), rerank ordering + gate |
 | `test_auth_security.py`, `test_user_store.py` | bcrypt hash/verify; JWT encode/decode; first-user-admin, duplicate, authenticate |
 | `test_api_auth.py`, `test_api_chat.py`, `test_api_admin.py` | API: register/login/me; `/chat` 401-vs-authed + identity flow; admin 403-vs-200 (httpx ASGITransport + dep overrides) |
-| `test_api_features.py` | `/chat` reply_message_id; `DELETE /sessions/{cid}` (auth + structural ownership); `GET/PUT /admin/system-prompt` + reset (admin-gated); `POST /messages/{id}/feedback` toggle; `GET /admin/feedback/summary` (admin-gated) |
+| `test_api_features.py` | `/chat` reply_message_id; `DELETE /sessions/{cid}` (auth + structural ownership); `GET/PUT /admin/system-prompt` + reset (admin-gated); `POST /messages/{id}/feedback` toggle; `GET /admin/feedback/summary` (admin-gated); `GET /admin/eval/traces` list + `/{id}` detail + 404 (admin-gated) |
 | `test_feedback.py`, `test_repository.py` (extended) | feedback insert/toggle/flip + summary; session cascade-delete (+ feedback) + app-setting KV CRUD |
 | `test_context_builder.py` (extended) | system-prompt override wins; None/empty falls back to the default |
 | `test_eval_logger.py`, `test_eval_instrument.py` | eval trace parent+child write, body-nulling, never-raises; instrumented chat records llm_call usage/latency, passes calls through, survives logger failure |
 | `test_eval_judge.py`, `test_eval_runner.py` | judge parses generation metrics + chunk labels (no-context → answer-relevance only; malformed JSON → null, no raise; scores clamped; correctness vs reference); runner judges only un-judged traces, skips body-less, commits per trace, survives a failing trace, status aggregates |
 | `test_eval_metrics.py`, `test_golden_store.py`, `test_golden_runner.py` | retrieval metrics (textbook recall/precision/mrr/graded-ndcg/hit-rate, None without golden); golden CRUD + replace-set; golden run computes metrics + correctness, stores run+results, skips no-reference correctness |
 | `test_dashboard.py` | DashboardStore aggregations: overview counts, generation means by judge run, retrieval Precision@k/NDCG/MRR from chunk labels, cost grouped by day + call_type, golden history; empty-state |
+| `test_trace_store.py` | TraceStore: `messages`→semantic-segment split (order, current-query not swallowed, token estimate), chunk ordering by final/fused rank, latest-judge-run selection, list filters + preview, bodies-not-logged degradation, missing→None |
 | `test_adaptive_rag.py`/`test_reranker.py`/`test_pipeline.py` (extended) | `_retrieve_knowledge` returns a `RetrievalTrace` (candidates + included); rerank attaches scores; a turn writes an eval_trace (+chunks for RAG, none for simple) |
 | `test_web_search.py` | Brave `web_search` tool: formatting, params, degrade, key-gated registration |
 | `test_discord_adapter.py` | Discord pure helpers: trigger matrix, mention strip, reaction reducer, chunking, event mapping |
@@ -123,7 +131,7 @@ Unit tests use **fakeredis**, in-memory **SQLite (StaticPool)**, and **FakeChat*
 fakes — no network or Docker needed. (See [decisions.md](decisions.md) on why
 SQLite/fakeredis are test-only.)
 
-**Frontend** (`frontend/`, Vitest + React Testing Library, 29 tests): API client
+**Frontend** (`frontend/`, Vitest + React Testing Library, 32 tests): API client
 (Bearer / 401), auth context, route guards (protected + admin), ChunkInspector
 & MessageBubble render (incl. 👍/👎 controls), conversation storage (per-user
 isolation, 20-cap eviction, rating toggle). Plus **browser e2e** via Playwright:

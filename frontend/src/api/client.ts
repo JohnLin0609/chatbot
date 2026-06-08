@@ -10,6 +10,8 @@ import type {
   IngestResult,
   SystemPrompt,
   TokenResponse,
+  TraceDetail,
+  TraceList,
   User,
 } from "./types";
 
@@ -185,3 +187,25 @@ export const latestGoldenRun = () =>
   apiFetch<GoldenRun>("/admin/golden/runs/latest");
 
 export const getDashboard = () => apiFetch<Dashboard>("/admin/dashboard");
+
+// ---- eval trace debug viewer ------------------------------------------------
+export interface TraceFilters {
+  tier?: string;
+  user_id?: string;
+  session_key?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const listTraces = (filters: TraceFilters = {}) => {
+  const q = new URLSearchParams();
+  if (filters.tier) q.set("tier", filters.tier);
+  if (filters.user_id) q.set("user_id", filters.user_id);
+  if (filters.session_key) q.set("session_key", filters.session_key);
+  q.set("limit", String(filters.limit ?? 50));
+  q.set("offset", String(filters.offset ?? 0));
+  return apiFetch<TraceList>(`/admin/eval/traces?${q.toString()}`);
+};
+
+export const getTrace = (id: number) =>
+  apiFetch<TraceDetail>(`/admin/eval/traces/${id}`);

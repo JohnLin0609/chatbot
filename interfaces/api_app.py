@@ -25,6 +25,7 @@ from core.documents.store import DocumentStore
 from core.eval.dashboard import DashboardStore
 from core.eval.factory import build_golden_runner, build_judge_runner
 from core.eval.golden_store import GoldenStore
+from core.eval.trace_store import TraceStore
 from core.feedback.store import FeedbackStore
 from core.persistence import repository as repo
 from core.settings.store import SYSTEM_PROMPT_KEY, AppSettingStore
@@ -124,6 +125,7 @@ def build_app(
     golden_store=None,
     golden_runner=None,
     dashboard=None,
+    trace_store=None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -151,6 +153,7 @@ def build_app(
             app.state.golden_store = golden_store
             app.state.golden_runner = golden_runner
             app.state.dashboard = dashboard
+            app.state.trace_store = trace_store
         else:
             sm = create_sessionmaker(create_engine(settings.postgres_dsn))
             store = QdrantVectorStore(
@@ -174,6 +177,7 @@ def build_app(
             app.state.golden_store = GoldenStore(sm)
             app.state.golden_runner = build_golden_runner(settings, sm)
             app.state.dashboard = DashboardStore(sm, settings)
+            app.state.trace_store = TraceStore(sm, settings)
         try:
             yield
         finally:
@@ -426,6 +430,30 @@ def build_app(
         if store is None:
             raise HTTPException(status_code=503, detail="dashboard unavailable")
         return await store.summary()
+
+    # --------------------------------------- eval trace debug viewer (admin)
+    @app.get("/admin/eval/traces")
+    async def list_traces(request: Request,
+                          tier: str | None = None, user_id: str | None = None,
+                          session_key: str | None = None,
+                          limit: int = 50, offset: int = 0,
+                          _admin: dict = Depends(require_admin)) -> dict:
+        store = request.app.state.trace_store
+        if store is None:
+            raise HTTPException(status_code=503, detail="trace store unavailable")
+        return await store.list(tier=tier, user_id=user_id, session_key=session_key,
+                                limit=limit, offset=offset)
+
+    @app.get("/admin/eval/traces/{trace_id}")
+    async def get_trace(trace_id: int, request: Request,
+                        _admin: dict = Depends(require_admin)) -> dict:
+        store = request.app.state.trace_store
+        if store is None:
+            raise HTTPException(status_code=503, detail="trace store unavailable")
+        detail = await store.detail(trace_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="trace not found")
+        return detail
 
     return app
 

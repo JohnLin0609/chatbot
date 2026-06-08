@@ -72,6 +72,23 @@ class FakeDashboard:
                 "golden": {"series": []}, "k_values": [1, 3, 5]}
 
 
+class FakeTraceStore:
+    async def list(self, *, tier=None, user_id=None, session_key=None,
+                   limit=50, offset=0):
+        return {"traces": [{"id": 11, "rag_tier": tier or "complex",
+                            "query_preview": "hi"}],
+                "total": 1, "limit": limit, "offset": offset}
+
+    async def detail(self, trace_id):
+        if trace_id != 11:
+            return None
+        return {"trace": {"id": 11, "rag_tier": "complex"},
+                "segments": [{"kind": "system_prompt", "label": "System prompt",
+                              "content": "P", "tokens": 1, "pct": 1.0}],
+                "messages": [{"role": "system", "content": "P"}],
+                "bodies_logged": True, "chunks": [], "judge": None}
+
+
 @pytest_asyncio.fixture
 async def app(sessionmaker):
     app = build_app(settings=S)
@@ -85,6 +102,7 @@ async def app(sessionmaker):
     app.state.golden_store = GoldenStore(sessionmaker)
     app.state.golden_runner = FakeGoldenRunner()
     app.state.dashboard = FakeDashboard()
+    app.state.trace_store = FakeTraceStore()
     return app
 
 
@@ -269,3 +287,29 @@ async def test_dashboard_admin_ok(app):
     async with await _client(app) as c:
         r = await c.get("/admin/dashboard", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200 and r.json()["overview"]["traces"] == 5
+
+
+# ------------------------------------------------ eval trace viewer (admin)
+async def test_traces_admin_gated(app):
+    app.dependency_overrides[get_current_user] = _user
+    async with await _client(app) as c:
+        assert (await c.get("/admin/eval/traces",
+                            headers={"Authorization": "Bearer x"})).status_code == 403
+        assert (await c.get("/admin/eval/traces/11",
+                            headers={"Authorization": "Bearer x"})).status_code == 403
+
+
+async def test_traces_list_and_detail(app):
+    app.dependency_overrides[get_current_user] = _admin
+    async with await _client(app) as c:
+        r = await c.get("/admin/eval/traces?tier=complex&limit=10",
+                        headers={"Authorization": "Bearer x"})
+        assert r.status_code == 200
+        assert r.json()["total"] == 1 and r.json()["traces"][0]["id"] == 11
+        d = await c.get("/admin/eval/traces/11", headers={"Authorization": "Bearer x"})
+        assert d.status_code == 200
+        assert d.json()["bodies_logged"] is True
+        assert d.json()["segments"][0]["kind"] == "system_prompt"
+        # unknown id -> 404
+        assert (await c.get("/admin/eval/traces/999",
+                            headers={"Authorization": "Bearer x"})).status_code == 404

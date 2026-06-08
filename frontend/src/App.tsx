@@ -9,6 +9,8 @@ import AdminPage from "./pages/AdminPage";
 import SystemPromptPage from "./pages/SystemPromptPage";
 import GoldenPage from "./pages/GoldenPage";
 import DashboardPage from "./pages/DashboardPage";
+import TracesPage from "./pages/TracesPage";
+import TraceDetailPage from "./pages/TraceDetailPage";
 
 export default function App() {
   const { loading } = useAuth();
@@ -60,6 +62,22 @@ export default function App() {
         element={
           <AdminRoute>
             <DashboardPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/eval/traces"
+        element={
+          <AdminRoute>
+            <TracesPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/eval/traces/:id"
+        element={
+          <AdminRoute>
+            <TraceDetailPage />
           </AdminRoute>
         }
       />
