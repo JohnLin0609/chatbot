@@ -26,6 +26,9 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   `medium` (hybrid retrieve → top 3) / `complex` (hybrid → Qwen3 rerank → top 3).
   Retrieval is **hybrid** (dense + BM25 sparse + RRF) over Qdrant; per-document-type
   chunking (slides `.pptx` / prose via spaCy / token); documents toggle on/off.
+  Slides chunk one-per-slide with the heading carried into the citation label
+  (`[1] (W14 例外處理 — 錯誤的種類) …`); uploads can **skip leading/trailing
+  slides** (cover / agenda / closing) via `skip_leading` / `skip_trailing`.
 - **Session lifecycle**: 10-min hot-cache TTL; a worker **idle-sweeper** finalises
   ended sessions into tier-2 summary + tier-3 facts so short chats still persist.
   The web conversation list is **isolated per account** and capped at **20**
