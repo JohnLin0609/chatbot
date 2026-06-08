@@ -52,11 +52,17 @@ services:
 
   # ----- application services (only started with `--profile app`) -----
 
-  # One-shot: bring the DB schema up to date, then exit. worker/api wait for this.
+  # One-shot: bring the DB schema up to date, then exit. worker/api wait for this
+  # via `condition: service_completed_successfully`. In `docker compose ps` this
+  # service correctly shows `Exited (0)` once finished — that is success, not a
+  # crash. The echo guarantees the logs always carry a clear completion marker
+  # (alembic prints nothing when the DB is already at head).
   migrate:
     build: .
     profiles: ["app"]
-    command: alembic upgrade head
+    command: >
+      sh -c "alembic upgrade head &&
+             echo '[migrate] DB schema is at alembic head; exiting 0 (expected for this one-shot job).'"
     env_file: .env
     environment: *backend-env
     depends_on:

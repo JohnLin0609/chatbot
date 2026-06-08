@@ -119,6 +119,14 @@ the API's CORS currently allows all origins (tighten for production).
 - **Eval judging**: the LLM-as-judge runs offline — `python -m interfaces.judge
   --all` (or admin `POST /admin/eval/judge`) to score new traces. It is batch /
   on-demand, not a long-running service.
+- **`migrate` shows `Exited (0)` in `docker compose ps` — that's success, not a
+  crash.** It is a one-shot job (`alembic upgrade head`) that runs once and exits;
+  `worker`/`api` gate on it via `condition: service_completed_successfully`. Its
+  logs end with `[migrate] DB schema is at alembic head; exiting 0 ...` so the
+  completion is visible even when alembic has nothing to upgrade (a no-op upgrade
+  is otherwise silent). A real failure looks like `Exited (1/255)` with an alembic
+  traceback — usually a stale `migrate` image behind the DB; fix with
+  `docker compose build migrate` then `up`.
 - **nginx upstream after recreating the API (compose `app` profile)**: the
   `frontend` nginx resolves `api` once and caches its container IP. If you rebuild
   /recreate only the `api` service, its IP changes and nginx serves 502 until you
