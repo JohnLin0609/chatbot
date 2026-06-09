@@ -286,8 +286,11 @@ documents → chunks → checkbox + grade), stored in `eval_golden_queries` /
 `GoldenRunner` then runs an offline eval over the set: for each query it **re-runs
 retrieval** (hybrid + rerank, classifier bypassed), computes **Recall@k /
 Precision@k / MRR / NDCG / Hit Rate** (`core/eval/metrics.py`, pure functions) vs
-the golden relevant set, generates an answer from the reranked top-k and judges its
-**Correctness** vs the reference (`Judge.judge_correctness`). Results land in
+the golden relevant set, generates an answer from the reranked top-k — **through
+the same path as live chat** (`build_context` + the pipeline's `_pair_code`
+slide→code pairing + `_format_knowledge`), so `rag_pair_code_enabled` is an
+honest A/B knob — and judges its **Correctness** vs the reference
+(`Judge.judge_correctness`). Results land in
 `eval_golden_runs` (aggregate) + `eval_golden_results` (per query). Triggered by the
 "Run eval" button → `POST /admin/golden/eval`; `GET /admin/golden/runs/latest` feeds
 the inline results table. These ground-truth metrics (true Recall@k, Correctness)

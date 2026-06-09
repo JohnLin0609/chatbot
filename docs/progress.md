@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. Backend tests green: **271 unit + 4 integration** (`pytest`; the
+Status snapshot. Backend tests green: **296 unit + 4 integration** (`pytest`; the
 live round-trip skips rather than fails if the LLM API stalls).
 Frontend: **32 tests** (`cd frontend && npm run test`).
 
