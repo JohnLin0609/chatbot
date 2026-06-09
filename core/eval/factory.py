@@ -58,4 +58,5 @@ def build_golden_runner(settings, sessionmaker):
     gen_chat = InstrumentedChatService(
         build_chat_service(settings), _eval_logger(settings, sessionmaker), "golden_gen")
     judge = build_judge(settings, sessionmaker)
-    return GoldenRunner(sessionmaker, retriever, reranker, gen_chat, judge, settings)
+    return GoldenRunner(sessionmaker, retriever, reranker, gen_chat, judge, settings,
+                        vector_store=store)

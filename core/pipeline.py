@@ -131,14 +131,14 @@ def _candidate(hit, fused_rank: int) -> "CandidateRecord":
     )
 
 
-async def _pair_code(deps: "PipelineDeps", final: list, candidates: list) -> list:
+async def _pair_code(settings, vector_store, final: list, candidates: list) -> list:
     """For each retrieved *slide* hit, fetch its paired example *code* (same
     lecture) so explanation + runnable example arrive together. Additive (beyond
-    top_k), deduped by lecture and against already-retrieved chunks, capped."""
-    settings = deps.settings
+    top_k), deduped by lecture and against already-retrieved chunks, capped.
+    Reused by the golden runner so its generation matches the live chat path."""
     if not getattr(settings, "rag_pair_code_enabled", False):
         return []
-    store = getattr(deps, "vector_store", None)
+    store = vector_store
     if store is None:
         return []
     cap = settings.rag_pair_code_max
@@ -212,7 +212,7 @@ async def _retrieve_knowledge(
 
         # Slide → code binding: pull each retrieved slide's paired example code
         # and inject it alongside (additive). Recorded in the trace as paired.
-        paired = await _pair_code(deps, final, candidates)
+        paired = await _pair_code(deps.settings, deps.vector_store, final, candidates)
         for code_hit in paired:
             rec = _candidate(code_hit, None)
             rec.included = True

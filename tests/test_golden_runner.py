@@ -28,6 +28,23 @@ class FakeChat:
         return "generated answer"
 
 
+class CapturingChat:
+    def __init__(self):
+        self.messages = None
+
+    async def generate_reply(self, sid, messages):
+        self.messages = messages
+        return "answer"
+
+
+class FakePairStore:
+    def __init__(self, code_hits):
+        self._code = code_hits
+
+    async def fetch_paired(self, content_type, lecture, *, limit=5):
+        return list(self._code)[:limit]
+
+
 class FakeJudge:
     async def judge_correctness(self, query, answer, reference):
         return MetricScore("correctness", 0.9, "matches reference")
@@ -72,6 +89,44 @@ async def test_no_reference_skips_correctness(sessionmaker):
         res = (await db.execute(select(EvalGoldenResult))).scalar_one()
     assert res.correctness is None and res.generated_answer is None
     assert res.metrics["recall"]["1"] == 1.0
+
+
+async def test_pairing_injects_code_into_generation(sessionmaker):
+    store = GoldenStore(sessionmaker)
+    await store.create(query="show me the W05 conditionals code",
+                       reference_answer="def pass_or_fail(s): ...",
+                       relevant_chunks=[{"doc_id": "s5", "chunk_index": 0}])
+    slide = Hit(text="slide body", score=1.0, title="W05_條件判斷.pptx",
+                payload={"doc_id": "s5", "chunk_index": 0,
+                         "content_type": "slide", "lecture": 5})
+    code = Hit(text="def pass_or_fail(score):\n    return score >= 60",
+               score=0.0, title="W05_條件判斷.py",
+               payload={"doc_id": "c5", "chunk_index": 0, "content_type": "code",
+                        "lecture": 5, "source_file": "W05_條件判斷.py"})
+    chat = CapturingChat()
+    s = make_settings(golden_eval_k_values=[1, 3], golden_eval_candidates=10,
+                      rag_complex_top_k=3, rag_pair_code_enabled=True)
+    runner = GoldenRunner(sessionmaker, FakeRetriever([slide]), None, chat,
+                          FakeJudge(), s, vector_store=FakePairStore([code]))
+    await runner.run()
+    blob = " ".join(m["content"] for m in chat.messages)
+    # the slide's paired code was injected into the generation prompt
+    assert "def pass_or_fail" in blob and "code: W05_條件判斷.py" in blob
+
+
+async def test_pairing_off_when_no_store(sessionmaker):
+    store = GoldenStore(sessionmaker)
+    await store.create(query="q", reference_answer="r",
+                       relevant_chunks=[{"doc_id": "s5", "chunk_index": 0}])
+    slide = Hit(text="slide", score=1.0, title="W05.pptx",
+                payload={"doc_id": "s5", "chunk_index": 0,
+                         "content_type": "slide", "lecture": 5})
+    chat = CapturingChat()
+    runner = GoldenRunner(sessionmaker, FakeRetriever([slide]), None, chat, FakeJudge(),
+                          make_settings(rag_complex_top_k=3), vector_store=None)
+    await runner.run()
+    assert chat.messages is not None and "code:" not in \
+        " ".join(m["content"] for m in chat.messages)
 
 
 async def test_latest_run(sessionmaker):

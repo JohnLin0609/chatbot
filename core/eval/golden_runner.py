@@ -21,27 +21,21 @@ from core.persistence.models import (
 log = logging.getLogger("eval.golden_runner")
 
 
-def _format_knowledge(chunks: list[dict]) -> str:
-    lines = []
-    for i, c in enumerate(chunks, start=1):
-        title = c.get("title") or "untitled"
-        lines.append(f"[{i}] ({title}) {c.get('text', '')}")
-    return "\n".join(lines)
-
-
 def _mean(values: list) -> float | None:
     nums = [v for v in values if v is not None]
     return round(sum(nums) / len(nums), 4) if nums else None
 
 
 class GoldenRunner:
-    def __init__(self, sessionmaker, retriever, reranker, chat, judge, settings) -> None:
+    def __init__(self, sessionmaker, retriever, reranker, chat, judge, settings,
+                 vector_store=None) -> None:
         self._sm = sessionmaker
         self._retriever = retriever
         self._reranker = reranker
         self._chat = chat
         self._judge = judge
         self._settings = settings
+        self._vector_store = vector_store  # enables slide→code pairing in generation
 
     @property
     def _provider(self) -> str:
@@ -53,7 +47,9 @@ class GoldenRunner:
         return self._settings.judge_model or self._settings.model_name
 
     async def _ranked(self, query: str):
-        """Return (ranked_keys, hits-as-dicts) — the system's hybrid+rerank ranking."""
+        """Return (ranked_keys, hits-as-dicts, hits) — the system's hybrid+rerank
+        ranking. The raw hits are kept so generation can run the same slide→code
+        pairing as the live chat path."""
         cands = await self._retriever.retrieve(
             query, top_k=self._settings.golden_eval_candidates)
         if self._reranker is not None and cands:
@@ -65,7 +61,7 @@ class GoldenRunner:
             ranked.append(key)
             dicts.append({"doc_id": p.get("doc_id"), "chunk_index": p.get("chunk_index"),
                           "title": h.title, "text": h.text})
-        return ranked, dicts
+        return ranked, dicts, cands
 
     async def run(self, k_values: list[int] | None = None) -> dict:
         ks = k_values or self._settings.golden_eval_k_values
@@ -94,7 +90,7 @@ class GoldenRunner:
                          "mrr": [], "correctness": []}
             for qid, query, reference, gold in golden:
                 try:
-                    ranked, dicts = await self._ranked(query)
+                    ranked, dicts, hits = await self._ranked(query)
                     mtr = M.compute_retrieval_metrics(ranked, gold, ks)
                     rel = {k for k, g in gold.items() if g and g > 0}
                     retrieved = [
@@ -104,13 +100,19 @@ class GoldenRunner:
 
                     answer = correctness = reasoning = None
                     if reference:
-                        top = dicts[: self._settings.rag_complex_top_k]
-                        messages = [
-                            {"role": "system", "content": persona},
-                            {"role": "system",
-                             "content": f"Relevant knowledge:\n{_format_knowledge(top)}"},
-                            {"role": "user", "content": query},
-                        ]
+                        # Mirror the live chat path: top-k + slide→code pairing,
+                        # the same knowledge formatting, assembled via build_context.
+                        from core.memory.context_builder import build_context
+                        from core.pipeline import _format_knowledge, _pair_code
+
+                        top = hits[: self._settings.rag_complex_top_k]
+                        paired = await _pair_code(self._settings, self._vector_store, top, hits)
+                        knowledge = _format_knowledge(list(top) + paired)
+                        messages = build_context(
+                            self._settings, channel_summary_text="",
+                            personal_memory_text="", window_turns=[], user_text=query,
+                            knowledge_text=knowledge, system_prompt=persona,
+                        )
                         answer = await self._chat.generate_reply("golden", messages)
                         c = await self._judge.judge_correctness(query, answer, reference)
                         correctness, reasoning = c.score, c.reasoning
