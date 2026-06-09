@@ -9,6 +9,7 @@ openai
 google-genai
 ollama
 redis
+tzdata
 sqlalchemy
 asyncpg
 alembic

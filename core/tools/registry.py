@@ -68,6 +68,7 @@ def register_default_tools(registry: ToolRegistry, settings: "Settings") -> None
     """Register every @tool-decorated tool whose `requires` gate passes."""
     # Import for side effects so the decorators run and populate the factory list.
     # (Knowledge RAG is no longer a tool — it's classifier-routed in the pipeline.)
+    import core.tools.datetime_tool  # noqa: F401
     import core.web.search_tool  # noqa: F401
 
     for tool_obj in _DEFAULT_TOOL_FACTORIES:

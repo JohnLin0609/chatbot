@@ -138,8 +138,11 @@ The main reply runs through a **tool-calling loop** (`core/tools/loop.py`
 the handler, stacks the result back as a `role=tool` message, and re-calls until
 the model returns plain text (bounded by `TOOL_MAX_ITERATIONS`). When tools are
 disabled or unsupported, it falls back to a single completion — so tier-1/2/3
-behaviour is unchanged. The live tool is **`web_search`** (Brave,
-`core/web/search_tool.py`), registered only when `BRAVE_API_KEY` is set.
+behaviour is unchanged. Live tools: **`current_datetime`**
+(`core/tools/datetime_tool.py`, always available — current date/time, default
+Asia/Taipei, with a fixed-offset fallback if the tz database is missing) and
+**`web_search`** (Brave, `core/web/search_tool.py`), registered only when
+`BRAVE_API_KEY` is set.
 
 Tools are extensible: a new tool is one `@tool(...)`-decorated async handler
 (`core/tools/registry.py`); `register_default_tools` wires them into a

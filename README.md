@@ -43,7 +43,8 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   default), injected fresh each turn.
 - **Feedback loop**: per-reply **👍/👎** for all users (toggle/cancelable), with an
   admin summary view.
-- **Tools**: extensible tool-calling loop; `web_search` (Brave) when keyed.
+- **Tools**: extensible tool-calling loop; `current_datetime` (current date/time,
+  default Asia/Taipei) and `web_search` (Brave) when keyed.
 - **Eval / observability**: every turn is logged (full context, retrieved
   candidates + scores/ranks, reply, tokens, latency); an offline **LLM-as-judge**
   scores them reference-free (Faithfulness / Answer Relevance / Context Utilization
