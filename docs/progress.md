@@ -1,6 +1,6 @@
 # Progress
 
-Status snapshot. Backend tests green: **296 unit + 4 integration** (`pytest`; the
+Status snapshot. Backend tests green: **318 unit + 4 integration** (`pytest`; the
 live round-trip skips rather than fails if the LLM API stalls).
 Frontend: **32 tests** (`cd frontend && npm run test`).
 
@@ -123,6 +123,7 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_tool_loop.py` (progress) | worker emits `thinking`/`tool_start`/`tool_end` progress around the tool loop |
 | `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + Adaptive-RAG injection + invariants |
 | `test_finalizer.py` | idle-session finalization: tier-2 fold, tier-3 force-extract, finalized_at, sweep selection + re-entrancy |
+| `test_production_hardening.py` | `APP_ENV=production` enforcement (JWT_SECRET / CORS / registration), Redis rate limiter + 429s on login/chat, dependency-checking `/health`, LLM timeout/retry wrapper |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
 | `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI: ingest → dense + **hybrid** (BM25/RRF) search |
 | `integration/test_web_search_roundtrip.py` | real Brave API search + tool formatting (skips without key) |
@@ -167,10 +168,16 @@ isolation across account switches, feedback, and the system-prompt override.
 - **Tuning**: `fact_system_prompt` can occasionally over-retire (mitigated by a
   code guard, but the prompt could be sharper); channel-summary length relies on
   prompt + render truncation (no per-call `max_tokens` cap).
-- **Auth**: JWT bearer auth now gates the API (`/chat` requires a user; docs/ingest
-  require admin). Still missing: refresh tokens, rate limiting, password reset, and
-  the frontend (Phase 3). Registration is open (first user = admin); lock via
-  `AUTH_OPEN_REGISTRATION=false`.
-- **Ops**: app processes aren't containerised; no CI yet.
+- **Auth**: JWT bearer auth gates the API (`/chat` requires a user; docs/ingest
+  require admin). Login/register/chat are rate-limited (Redis fixed-window;
+  `RATE_LIMIT_*`). `APP_ENV=production` enforces `JWT_SECRET`, explicit
+  `CORS_ALLOW_ORIGINS`, and closes registration by default. Still missing:
+  refresh tokens, password reset.
+- **Resilience**: every LLM call has a hard timeout + bounded retry/backoff
+  (`LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES`); `/health` pings Redis + Postgres;
+  fire-and-forget eval/extraction tasks are tracked and drained on worker exit.
+- **Ops**: dependencies are pinned (`requirements*.txt`); GitHub Actions CI runs
+  backend unit tests + frontend build/tests. Still missing: metrics/tracing
+  export, backup automation.
 
 See [roadmap.md](roadmap.md) for the planned work and where each slots in.

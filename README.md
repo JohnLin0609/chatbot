@@ -39,6 +39,12 @@ The LLM provider is switchable between **Anthropic / OpenAI / Gemini / Ollama**.
   The web conversation list is **isolated per account** and capped at **20**
   (oldest-evicted, warned); deleting one cascades the backend session + messages.
 - **Auth**: JWT bearer; first registered account is admin; admin gates RAG management.
+  Login/register/chat are **rate-limited** (Redis fixed-window). `APP_ENV=production`
+  enforces a safe config at startup: `JWT_SECRET` required, explicit CORS origins,
+  registration closed by default.
+- **Resilience**: every LLM call has a hard timeout + bounded retry/backoff;
+  `/health` pings Redis + Postgres; background eval/extraction tasks are tracked
+  and drained on shutdown.
 - **Admin system prompt**: a global, admin-editable agent persona (empty ⇒ `.env`
   default), injected fresh each turn.
 - **Feedback loop**: per-reply **👍/👎** for all users (toggle/cancelable), with an
@@ -158,9 +164,13 @@ provider is required; set a strong `JWT_SECRET` for the API.
 
 | Variable | Default | Description |
 | --- | --- | --- |
+| `APP_ENV` | `dev` | `production` enforces JWT_SECRET + explicit CORS + closed registration |
 | `PROVIDER` / `MODEL` | `anthropic` / per-provider | LLM provider + model |
 | `OPENAI_API_KEY` | — | chat (if openai) + embeddings |
-| `JWT_SECRET` | — | API token signing (set in prod) |
+| `JWT_SECRET` | — | API token signing (required in prod) |
+| `CORS_ALLOW_ORIGINS` | `*` | CSV of allowed origins (explicit list in prod) |
+| `RATE_LIMIT_AUTH_PER_MINUTE` / `RATE_LIMIT_CHAT_PER_MINUTE` | `10` / `20` | per-IP auth / per-user chat limits |
+| `LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` | `60` / `2` | upstream LLM deadline + retries |
 | `REDIS_URL` / `POSTGRES_DSN` / `QDRANT_URL` | dedicated ports | backing stores |
 | `HOT_TTL_SECONDS` | `600` | session hot-cache TTL (10 min) |
 | `USER_MEMORY_TTL_SECONDS` | `604800` | tier-3 mirror TTL (decoupled) |

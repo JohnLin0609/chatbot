@@ -106,8 +106,9 @@ VITE_API_BASE_URL=https://api.example.com npm run build   # -> frontend/dist/
 ```
 
 Serve the static `dist/` from any static host / CDN / edge (nginx, etc.), or your
-reverse proxy. Set `VITE_API_BASE_URL` (at build time) to the public API origin;
-the API's CORS currently allows all origins (tighten for production).
+reverse proxy. Set `VITE_API_BASE_URL` (at build time) to the public API origin
+and list the SPA's origin in the API's `CORS_ALLOW_ORIGINS` (with
+`APP_ENV=production` a wildcard is rejected at startup).
 
 ## 5. Operational notes
 
@@ -153,12 +154,29 @@ the API's CORS currently allows all origins (tighten for production).
   `EMBEDDING_DIM` against an existing `knowledge` collection — re-ingest into a
   fresh collection instead.
 
+## Production checklist
+
+Set `APP_ENV=production` — the app refuses to start until the unsafe defaults
+are resolved:
+
+- `JWT_SECRET`: required (long random value, >=32 bytes). Without it tokens are
+  signed with an ephemeral per-process secret (logins die on restart; multiple
+  API instances reject each other's tokens).
+- `CORS_ALLOW_ORIGINS`: explicit origin list required (e.g.
+  `https://chat.example.com`); `*` is rejected.
+- Registration: closed by default in production. Create the admin account first
+  (temporarily set `AUTH_OPEN_REGISTRATION=true`), then remove the override.
+
+Already on by default: rate limiting (`RATE_LIMIT_AUTH_PER_MINUTE` on
+login/register per client IP, `RATE_LIMIT_CHAT_PER_MINUTE` per user) and LLM
+call timeouts/retries (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`).
+
 ## Known gaps (before production)
 
-- JWT auth gates the API, but no rate limiting / refresh tokens / password reset
-  yet. Set a strong `JWT_SECRET` and `AUTH_OPEN_REGISTRATION=false` once the admin
-  account exists if the API is exposed.
-- App processes not containerised; no orchestration manifests.
-- No CI/CD; no metrics/tracing.
+- No refresh tokens / password reset; no per-user token budgets.
+- No metrics/tracing export (cost/latency data is in `llm_calls`, but nothing
+  ships it to Prometheus/OTel); no backup automation for `pgdata`/`qdrant_data`.
+- Single-instance API assumption: `OutboundWaiter` correlates replies in-process,
+  so multiple API replicas need sticky routing (worker replicas scale freely).
 
 See [roadmap.md](roadmap.md).
