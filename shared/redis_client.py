@@ -55,11 +55,11 @@ async def read_group(
         # socket read timeout depending on client config; treat as "idle".
         return []
     if not result:
-        # Yield to the event loop on idle reads. Real Redis blocks server-side
-        # so this is a no-op; fakeredis ignores `block` and returns instantly,
-        # and without this yield a `while True` reader never suspends and
-        # starves every other task in the loop.
-        await asyncio.sleep(0)
+        # Pause briefly on idle reads. Real Redis blocks server-side for
+        # block_ms so this adds ~nothing; fakeredis ignores `block` and returns
+        # instantly, and without this pause a `while True` reader becomes a
+        # tight spinner that starves every other task in the loop.
+        await asyncio.sleep(0.01)
         return []
     # result = [(stream_name, [(msg_id, {field: value}), ...])]
     return result[0][1]
