@@ -396,3 +396,192 @@ async def test_pipeline_routes_through_tool_loop(redis, sessionmaker):
     assert out.status == "ok"
     assert out.text == "Refunds take 30 days."
     assert seen_tool_output["text"] == "Refund within 30 days"  # tool actually ran
+
+
+# ---------------------------------------- error paths (partial failures)
+async def test_llm_error_after_retrieval_no_partial_writes(redis, sessionmaker):
+    """Retrieval succeeds, then the LLM dies: error outbound, and NOTHING is
+    persisted — no db messages, no hot-store turns (pins write ordering)."""
+    from core.rag.classifier import MEDIUM
+    from core.rag.vector_store import Hit
+
+    class FakeClassifier:
+        async def classify(self, q):
+            return MEDIUM
+
+    class FakeRetriever:
+        def __init__(self):
+            self.called = False
+
+        async def retrieve(self, q, *, top_k):
+            self.called = True
+            return [Hit(text="knowledge", score=0.9, title="Doc", payload={})]
+
+    class BoomChat:
+        supports_tools = False
+
+        async def generate_reply(self, key, messages):
+            raise ChatServiceError("upstream down")
+
+        async def complete(self, key, messages, tools=None):
+            raise ChatServiceError("upstream down")
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    deps = _deps(s, redis, sessionmaker, BoomChat())
+    retriever = FakeRetriever()
+    deps.classifier = FakeClassifier()
+    deps.retriever = retriever
+
+    out = await handle_inbound(_inbound("question", channel="err1"), deps)
+
+    assert retriever.called  # retrieval really happened first
+    assert out.status == "error"
+    async with sessionmaker() as db:
+        count = (await db.execute(select(func.count()).select_from(Message))).scalar()
+    assert count == 0
+    _, turns = await deps.hot_store.load(make_session_id("line", "err1"))
+    assert turns == []
+
+
+async def test_retriever_failure_still_replies_without_knowledge(redis, sessionmaker):
+    from core.rag.classifier import MEDIUM
+
+    class FakeClassifier:
+        async def classify(self, q):
+            return MEDIUM
+
+    class BrokenRetriever:
+        async def retrieve(self, q, *, top_k):
+            raise ConnectionError("qdrant down")
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    chat = FakeChat()
+    deps = _deps(s, redis, sessionmaker, chat)
+    deps.classifier = FakeClassifier()
+    deps.retriever = BrokenRetriever()
+
+    out = await handle_inbound(_inbound("question", channel="err2"), deps)
+
+    assert out.status == "ok"
+    assert out.text == "reply-to:question"
+    assert all("knowledge" not in m["content"].lower()
+               for call in chat.calls for m in call if m["role"] == "system")
+    async with sessionmaker() as db:  # the turn persisted normally
+        count = (await db.execute(select(func.count()).select_from(Message))).scalar()
+    assert count == 2
+
+
+async def test_classifier_failure_still_replies(redis, sessionmaker):
+    class BrokenClassifier:
+        async def classify(self, q):
+            raise TimeoutError("classifier LLM stalled")
+
+    class TrackingRetriever:
+        def __init__(self):
+            self.called = False
+
+        async def retrieve(self, q, *, top_k):
+            self.called = True
+            return []
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    deps = _deps(s, redis, sessionmaker, FakeChat())
+    deps.classifier = BrokenClassifier()
+    deps.retriever = TrackingRetriever()
+
+    out = await handle_inbound(_inbound("question", channel="err3"), deps)
+    assert out.status == "ok"
+    assert out.text == "reply-to:question"
+
+
+# ------------------------------------ tool loop through the full pipeline
+def _lookup_registry(handler=None):
+    from core.tools.schemas import Tool
+
+    async def lookup(args, ctx):
+        return f"result-for:{args.get('q', '')}"
+
+    registry = ToolRegistry()
+    registry.register(Tool(name="lookup", description="look things up",
+                           parameters={"type": "object", "properties": {}},
+                           handler=handler or lookup))
+    return registry
+
+
+async def test_tool_round_trip_stacks_messages_and_persists(redis, sessionmaker):
+    from core.tools.schemas import ToolCall
+    from tests.conftest import ToolCallingFakeChat
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    chat = ToolCallingFakeChat([ToolCall(id="c1", name="lookup",
+                                         arguments={"q": "例外處理"})])
+    deps = _deps(s, redis, sessionmaker, chat, registry=_lookup_registry())
+
+    out = await handle_inbound(_inbound("查一下例外處理", channel="t1"), deps)
+
+    assert out.status == "ok"
+    assert out.text == "answer: result-for:例外處理"
+    # OpenAI stacking contract: 2nd completion sees the verbatim assistant
+    # message (with tool_calls) followed by the tool result for that call id.
+    second = chat.calls[1]
+    assert second[-2]["role"] == "assistant"
+    assert second[-2]["tool_calls"][0]["id"] == "c1"
+    assert second[-1] == {"role": "tool", "tool_call_id": "c1",
+                          "content": "result-for:例外處理"}
+    async with sessionmaker() as db:  # final answer persisted as the reply
+        row = (await db.execute(
+            select(Message).where(Message.role == "assistant")
+        )).scalar_one()
+    assert row.content == "answer: result-for:例外處理"
+
+
+async def test_unknown_tool_surfaces_error_to_model(redis, sessionmaker):
+    from core.tools.schemas import ToolCall
+    from tests.conftest import ToolCallingFakeChat
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    chat = ToolCallingFakeChat([ToolCall(id="c1", name="no_such_tool", arguments={})])
+    deps = _deps(s, redis, sessionmaker, chat, registry=_lookup_registry())
+
+    out = await handle_inbound(_inbound("hi", channel="t2"), deps)
+
+    assert out.status == "ok"  # reply still produced
+    tool_msg = [m for m in chat.calls[1] if m["role"] == "tool"][0]
+    assert tool_msg["content"] == "error: unknown tool 'no_such_tool'"
+
+
+async def test_tool_handler_exception_surfaces_error_to_model(redis, sessionmaker):
+    from core.tools.schemas import ToolCall
+    from tests.conftest import ToolCallingFakeChat
+
+    async def kaboom(args, ctx):
+        raise ValueError("kaboom")
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000)
+    chat = ToolCallingFakeChat([ToolCall(id="c1", name="lookup", arguments={})])
+    deps = _deps(s, redis, sessionmaker, chat, registry=_lookup_registry(kaboom))
+
+    out = await handle_inbound(_inbound("hi", channel="t3"), deps)
+
+    assert out.status == "ok"
+    tool_msg = [m for m in chat.calls[1] if m["role"] == "tool"][0]
+    assert tool_msg["content"] == "error: kaboom"
+
+
+async def test_tool_iteration_cap_forces_convergence(redis, sessionmaker):
+    from core.tools.schemas import ToolCall
+    from tests.conftest import ToolCallingFakeChat
+
+    s = make_settings(context_window_tokens=10_000, fact_extraction_tokens=10_000,
+                      tool_max_iterations=2)
+    calls = [ToolCall(id=f"c{i}", name="lookup", arguments={"q": str(i)})
+             for i in range(3)]  # one more than the cap
+    chat = ToolCallingFakeChat(calls)
+    deps = _deps(s, redis, sessionmaker, chat, registry=_lookup_registry())
+
+    out = await handle_inbound(_inbound("hi", channel="t4"), deps)
+
+    assert out.status == "ok"
+    # 2 capped iterations with tools, then one final tool-free pass.
+    assert [t is not None for t in chat.tools_seen] == [True, True, False]
+    assert "result-for:0" in out.text and "result-for:1" in out.text

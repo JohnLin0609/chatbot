@@ -123,6 +123,23 @@ async def test_complex_without_reranker_uses_fused_topk():
     assert not trace.reranked and sum(c.included for c in trace.candidates) == 2
 
 
+class CrashingReranker:
+    async def rerank(self, q, hits, top_k):
+        raise RuntimeError("reranker died")
+
+
+async def test_reranker_failure_degrades_to_fused_topk():
+    """A reranker-only failure must not throw away the retrieved knowledge —
+    degrade to the fused top-k, exactly like running without a reranker."""
+    r = FakeRetriever(H)
+    s = make_settings(rag_complex_candidates=5, rag_complex_top_k=2)
+    out, trace = await _retrieve_knowledge(_deps(COMPLEX, r, CrashingReranker(), s), "q")
+    assert out.count("[") == 2  # knowledge still injected
+    assert trace is not None and not trace.reranked
+    assert len(trace.candidates) == 5
+    assert sum(c.included for c in trace.candidates) == 2
+
+
 async def test_no_classifier_returns_empty():
     deps = SimpleNamespace(classifier=None, retriever=None, reranker=None,
                            settings=make_settings())

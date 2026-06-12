@@ -53,6 +53,53 @@ class FakeChat:
         )
 
 
+class ToolCallingFakeChat:
+    """Scripted tool-calling LLM: pops one queued ToolCall per completion while
+    tools are offered, then answers with the tool results interpolated.
+
+    Exercises the REAL tool loop (assistant-message stacking, tool dispatch,
+    iteration cap) through the full pipeline — FakeChat never emits tool calls.
+    """
+
+    supports_tools = True
+
+    def __init__(self, scripted_calls, final_text="answer: {tool_results}"):
+        self._scripted = list(scripted_calls)
+        self._final_text = final_text
+        self.calls: list[list[dict]] = []
+        self.tools_seen: list[list[dict] | None] = []
+
+    async def complete(self, session_id, messages, tools=None):
+        import json
+
+        from core.tools.schemas import ChatCompletionResult
+
+        self.calls.append(list(messages))
+        self.tools_seen.append(tools)
+        if tools and self._scripted:
+            call = self._scripted.pop(0)
+            raw = {"role": "assistant", "content": None,
+                   "tool_calls": [{"id": call.id, "type": "function",
+                                   "function": {"name": call.name,
+                                                "arguments": json.dumps(call.arguments)}}]}
+            return ChatCompletionResult(
+                text=None, tool_calls=[call], raw_assistant_message=raw
+            )
+        tool_results = " | ".join(
+            m["content"] for m in messages if m.get("role") == "tool"
+        )
+        text = self._final_text.format(tool_results=tool_results)
+        return ChatCompletionResult(
+            text=text, tool_calls=[],
+            raw_assistant_message={"role": "assistant", "content": text},
+        )
+
+    async def generate_reply(self, session_id, messages):
+        # summarizer / fact-extractor path
+        self.calls.append(list(messages))
+        return "summary"
+
+
 class FakeEmbedding:
     dim = 1536
 

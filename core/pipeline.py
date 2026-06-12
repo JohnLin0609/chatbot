@@ -188,9 +188,15 @@ async def _retrieve_knowledge(
             )
             reranked = deps.reranker is not None
             if reranked:
-                final = await deps.reranker.rerank(
-                    query, list(candidates), settings.rag_complex_top_k
-                )
+                try:
+                    final = await deps.reranker.rerank(
+                        query, list(candidates), settings.rag_complex_top_k
+                    )
+                except Exception:  # noqa: BLE001 — degrade, don't drop knowledge
+                    log.warning("rerank failed; falling back to fused top-k",
+                                exc_info=True)
+                    reranked = False
+                    final = candidates[: settings.rag_complex_top_k]
             else:
                 final = candidates[: settings.rag_complex_top_k]
         else:  # medium
