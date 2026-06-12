@@ -47,22 +47,33 @@ async def run() -> None:
                  settings.session_finalize_idle_seconds)
 
     while True:
-        # Reclaim messages abandoned by crashed workers, then read new ones.
-        claimed = await rc.autoclaim(
-            redis, settings.inbound_stream, settings.core_consumer_group, consumer
-        )
-        for message_id, fields in claimed:
-            await _safe_process(redis, deps, settings, message_id, fields)
+        await run_once(redis, deps, settings, consumer)
 
-        messages = await rc.read_group(
-            redis,
-            settings.inbound_stream,
-            settings.core_consumer_group,
-            consumer,
-            block_ms=5000,
-        )
-        for message_id, fields in messages:
-            await _safe_process(redis, deps, settings, message_id, fields)
+
+async def run_once(redis, deps, settings, consumer, *,
+                   autoclaim_min_idle_ms: int = 60000, block_ms: int = 5000) -> int:
+    """One scheduling pass: reclaim messages abandoned by crashed workers,
+    then read new ones. Returns how many messages were attempted."""
+    attempted = 0
+    claimed = await rc.autoclaim(
+        redis, settings.inbound_stream, settings.core_consumer_group, consumer,
+        min_idle_ms=autoclaim_min_idle_ms,
+    )
+    for message_id, fields in claimed:
+        await _safe_process(redis, deps, settings, message_id, fields)
+        attempted += 1
+
+    messages = await rc.read_group(
+        redis,
+        settings.inbound_stream,
+        settings.core_consumer_group,
+        consumer,
+        block_ms=block_ms,
+    )
+    for message_id, fields in messages:
+        await _safe_process(redis, deps, settings, message_id, fields)
+        attempted += 1
+    return attempted
 
 
 async def _safe_process(redis, deps, settings, message_id, fields) -> None:

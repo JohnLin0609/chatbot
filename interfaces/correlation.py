@@ -44,7 +44,10 @@ class OutboundWaiter:
                 pass
 
     def register(self, correlation_id: str) -> asyncio.Future:
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        # get_running_loop: register() is only ever called from async handlers;
+        # get_event_loop() is deprecated outside a running loop and could bind
+        # the future to the wrong loop.
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[correlation_id] = future
         return future
 
