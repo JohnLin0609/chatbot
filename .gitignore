@@ -12,3 +12,8 @@ frontend/.env
 
 # Playwright MCP run artifacts
 .playwright-mcp/
+
+# Coverage data
+.coverage
+.coverage.*
+htmlcov/
