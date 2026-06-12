@@ -3,6 +3,7 @@
 from enum import Enum
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +50,12 @@ DEFAULT_FACT_PROMPT = (
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # ------------------------------------------------------------ Environment
+    # "dev" (default) keeps the permissive conveniences (ephemeral JWT secret,
+    # wildcard CORS, open registration). "production" enforces the safe
+    # configuration at startup — see `_enforce_production`.
+    app_env: str = "dev"
+
     # ------------------------------------------------------------------ LLM
     # Which LLM backend to talk to.
     provider: Provider = Provider.anthropic
@@ -70,6 +77,12 @@ class Settings(BaseSettings):
         "Answer in the same language the user writes in."
     )
     max_tokens: int = 1024
+
+    # Upstream LLM call resilience: every provider call gets a hard timeout and
+    # a bounded retry with exponential backoff (transient network/5xx errors).
+    llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2  # retries after the first attempt
+    llm_retry_backoff_seconds: float = 1.0  # doubles per retry
 
     # ---------------------------------------------------------------- Redis
     # Defaults match docker-compose's dedicated host ports (6380/5433) so the
@@ -165,7 +178,18 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiry_minutes: int = 1440  # 24h
     # Open self-registration; the first account created becomes admin.
+    # In production this defaults to False unless explicitly set.
     auth_open_registration: bool = True
+
+    # CSV of allowed CORS origins; "*" allows any (dev only — production
+    # requires an explicit list).
+    cors_allow_origins: str = "*"
+
+    # Redis fixed-window rate limits (per minute). Auth limits key on client
+    # IP; chat limits key on the authenticated user id.
+    rate_limit_enabled: bool = True
+    rate_limit_auth_per_minute: int = 10
+    rate_limit_chat_per_minute: int = 20
 
     # ----------------------------------------------- Tier-4 RAG / vector store
     qdrant_url: str = "http://localhost:6333"
@@ -234,6 +258,34 @@ class Settings(BaseSettings):
     def model_name(self) -> str:
         """Resolved model: explicit MODEL, else the provider default."""
         return self.model or DEFAULT_MODELS[self.provider]
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in ("production", "prod")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _enforce_production(self) -> "Settings":
+        if not self.is_production:
+            return self
+        if not self.jwt_secret:
+            raise ValueError(
+                "APP_ENV=production requires JWT_SECRET to be set — the ephemeral "
+                "dev secret invalidates logins on restart and breaks multi-instance "
+                "deployments."
+            )
+        if "*" in self.cors_origins:
+            raise ValueError(
+                "APP_ENV=production requires CORS_ALLOW_ORIGINS to list explicit "
+                "origins (e.g. https://chat.example.com), not '*'."
+            )
+        # Registration stays open only if the operator explicitly opted in.
+        if "auth_open_registration" not in self.model_fields_set:
+            self.auth_open_registration = False
+        return self
 
 
 @lru_cache

@@ -10,6 +10,7 @@ from core.llm import (
     OpenAIChatService,
     build_chat_service,
 )
+from core.llm.resilience import ResilientChatService
 from core.config import Provider, Settings
 
 
@@ -28,7 +29,9 @@ def _settings(**kwargs) -> Settings:
 )
 def test_factory_builds_expected_service(provider, kwargs, expected):
     svc = build_chat_service(_settings(provider=provider, **kwargs))
-    assert isinstance(svc, expected)
+    # Every provider is wrapped with timeout/retry resilience.
+    assert isinstance(svc, ResilientChatService)
+    assert isinstance(svc._inner, expected)
 
 
 @pytest.mark.parametrize(

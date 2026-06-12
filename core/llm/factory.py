@@ -6,6 +6,7 @@ from core.llm.base import ChatService
 from core.llm.gemini_service import GeminiChatService
 from core.llm.ollama_service import OllamaChatService
 from core.llm.openai_service import OpenAIChatService
+from core.llm.resilience import ResilientChatService
 
 _SERVICES: dict[Provider, type[ChatService]] = {
     Provider.anthropic: AnthropicChatService,
@@ -16,4 +17,4 @@ _SERVICES: dict[Provider, type[ChatService]] = {
 
 
 def build_chat_service(settings: Settings) -> ChatService:
-    return _SERVICES[settings.provider](settings)
+    return ResilientChatService(_SERVICES[settings.provider](settings), settings)

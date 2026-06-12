@@ -34,6 +34,7 @@ from core.rag.embeddings import build_embedding_service
 from core.rag.ingest import IngestService, SlideRangeError
 from core.rag.sparse import build_sparse_embedder
 from core.rag.vector_store import QdrantVectorStore
+from core.ratelimit import RateLimiter
 from core.tokens.counter import TokenCounter
 from interfaces.correlation import OutboundWaiter
 from shared import redis_client as rc
@@ -140,6 +141,9 @@ def build_app(
         )
         await w.start()
         app.state.waiter = w
+        app.state.limiter = RateLimiter(
+            app.state.redis, f"{settings.redis_key_prefix}:rl"
+        )
         # db / rag services (injected in tests, else built from real backends)
         if user_store is not None:
             app.state.user_store = user_store
@@ -187,16 +191,53 @@ def build_app(
 
     app = FastAPI(title="Chatbot Console API", lifespan=lifespan)
     app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+        CORSMiddleware, allow_origins=settings.cors_origins,
+        allow_methods=["*"], allow_headers=["*"],
     )
 
+    async def _check_rate(request: Request, bucket: str, limit: int) -> None:
+        """Raise 429 when `bucket` exceeds `limit` hits/minute. No-op when rate
+        limiting is disabled or the app was built without lifespan (tests)."""
+        limiter = getattr(request.app.state, "limiter", None)
+        if limiter is None or not settings.rate_limit_enabled:
+            return
+        if not await limiter.hit(bucket, limit):
+            raise HTTPException(status_code=429, detail="Too many requests")
+
+    def _client_ip(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
+
     @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health(request: Request) -> dict:
+        """Liveness + readiness: pings Redis and Postgres when available."""
+        checks: dict[str, str] = {}
+        r = getattr(request.app.state, "redis", None)
+        if r is not None:
+            try:
+                await r.ping()
+                checks["redis"] = "ok"
+            except Exception as exc:  # noqa: BLE001
+                checks["redis"] = f"error: {exc}"
+        sm = getattr(request.app.state, "sessionmaker", None)
+        if sm is not None:
+            try:
+                from sqlalchemy import text
+
+                async with sm() as db:
+                    await db.execute(text("SELECT 1"))
+                checks["postgres"] = "ok"
+            except Exception as exc:  # noqa: BLE001
+                checks["postgres"] = f"error: {exc}"
+        ok = all(v == "ok" for v in checks.values())
+        if not ok:
+            raise HTTPException(status_code=503, detail={"status": "degraded", **checks})
+        return {"status": "ok", **checks}
 
     # ----------------------------------------------------------- auth
     @app.post("/auth/register", response_model=TokenResponse)
     async def register(req: RegisterRequest, request: Request) -> TokenResponse:
+        await _check_rate(request, f"auth:{_client_ip(request)}",
+                          settings.rate_limit_auth_per_minute)
         if not settings.auth_open_registration:
             raise HTTPException(status_code=403, detail="Registration is closed")
         try:
@@ -208,6 +249,8 @@ def build_app(
 
     @app.post("/auth/login", response_model=TokenResponse)
     async def login(req: LoginRequest, request: Request) -> TokenResponse:
+        await _check_rate(request, f"auth:{_client_ip(request)}",
+                          settings.rate_limit_auth_per_minute)
         user = await request.app.state.user_store.authenticate(req.email, req.password)
         if user is None:
             raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -223,6 +266,8 @@ def build_app(
     async def chat(
         req: ChatRequest, request: Request, user: dict = Depends(get_current_user)
     ) -> ChatResponse:
+        await _check_rate(request, f"chat:{user['id']}",
+                          settings.rate_limit_chat_per_minute)
         app = request.app
         channel_id = f"{user['id']}:{req.conversation_id}"
         correlation_id = str(uuid.uuid4())

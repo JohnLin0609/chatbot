@@ -7,6 +7,7 @@ import asyncio
 import logging
 import socket
 
+from core.background import drain
 from core.config import get_settings
 from core.pipeline import handle_inbound
 from core.runtime import build_pipeline_deps
@@ -85,8 +86,17 @@ async def _sweeper(deps, settings) -> None:
         await asyncio.sleep(settings.session_sweep_interval_seconds)
 
 
+async def _main() -> None:
+    try:
+        await run()
+    finally:
+        # Flush fire-and-forget work (eval traces, async fact extraction)
+        # before the loop dies, so shutdown doesn't drop them silently.
+        await drain()
+
+
 if __name__ == "__main__":
     try:
-        asyncio.run(run())
+        asyncio.run(_main())
     except KeyboardInterrupt:
         log.info("worker stopped")

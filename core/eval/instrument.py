@@ -3,9 +3,10 @@ row (call_type, model, token estimates, latency) for every call, without touchin
 providers or call sites. Duck-types ChatService (generate_reply/complete/
 supports_tools). Logging is fire-and-forget and never affects the wrapped call."""
 
-import asyncio
 import logging
 import time
+
+from core.background import spawn
 
 log = logging.getLogger("eval.instrument")
 
@@ -47,7 +48,7 @@ class InstrumentedChatService:
 
     def _fire(self, session_id, messages, text, latency_ms, ok, err) -> None:
         try:
-            asyncio.create_task(self._logger.log_call(
+            spawn(self._logger.log_call(
                 self._call_type,
                 messages=messages,
                 output_text=text,

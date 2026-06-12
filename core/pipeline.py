@@ -8,7 +8,6 @@ Maintains three memory tiers:
 Platform-agnostic: passes correlation/routing fields through verbatim.
 """
 
-import asyncio
 import logging
 import time
 import uuid
@@ -16,6 +15,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from core.background import spawn
 from core.config import Settings
 from core.eval.logger import NullEvalLogger
 from core.eval.schemas import CandidateRecord, RetrievalTrace
@@ -331,9 +331,7 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
 
         # --- tier-3: per-user fact extraction at the higher water-level ---
         if settings.fact_extraction_async:
-            asyncio.create_task(
-                _extract_facts_async(deps, user_key, inbound.user_id)
-            )
+            spawn(_extract_facts_async(deps, user_key, inbound.user_id))
         else:
             await _maybe_extract_facts(deps, db, user_key, inbound.user_id)
 
@@ -344,7 +342,7 @@ async def handle_inbound(inbound: InboundEvent, deps: PipelineDeps) -> OutboundE
         await db.commit()
 
     # --- eval logging (best-effort, fire-and-forget) ---
-    asyncio.create_task(deps.eval_logger.log_trace(
+    spawn(deps.eval_logger.log_trace(
         event_id=inbound.event_id,
         correlation_id=inbound.correlation_id,
         session_db_id=session_db_id,
