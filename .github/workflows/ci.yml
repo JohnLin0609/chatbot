@@ -21,8 +21,8 @@ jobs:
           pip install torch==2.12.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-dev.txt
           python -m spacy download xx_sent_ud_sm
-      - name: Run unit tests
-        run: pytest -m "not integration" -q
+      - name: Run unit tests with coverage gate
+        run: pytest -m "not integration" -q --cov --cov-report=term-missing
 
   frontend:
     runs-on: ubuntu-latest

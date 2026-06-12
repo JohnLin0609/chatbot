@@ -1,0 +1,22 @@
+# Coverage config — used by `pytest --cov` and CI.
+#
+# Ratchet rule: when coverage rises >=1 point above fail_under, bump
+# fail_under to (new coverage - 1). Never lower it. See docs/testing.md.
+
+[run]
+source =
+    core
+    interfaces
+    shared
+omit =
+    # Manual / interactive entrypoints: need a real gateway, a TTY, or an
+    # operator. Their pure logic lives in importable modules that ARE covered
+    # (discord_helpers, eval.runner, pipeline).
+    interfaces/cli.py
+    interfaces/judge.py
+    interfaces/discord_app.py
+
+[report]
+fail_under = 88
+skip_covered = True
+show_missing = True

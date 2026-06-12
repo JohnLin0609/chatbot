@@ -13,6 +13,7 @@ lives in PostgreSQL + Qdrant, hot context in Redis.
 | [architecture.md](architecture.md) | Technical reference: layers, message flow, memory tiers, RAG/tools. |
 | [progress.md](progress.md) | What's built so far, test inventory, known limitations, live-verified behaviour. |
 | [development.md](development.md) | Local setup, running services & tests, and how to extend (tools / providers / migrations / config). |
+| [testing.md](testing.md) | TDD/BDD workflow: test taxonomy, red-green-refactor loop, house rules, World/fixture catalogue, coverage ratchet. |
 | [deployment.md](deployment.md) | Deploying to another machine: services, secrets, migrations, process model, scaling. |
 | [roadmap.md](roadmap.md) | Planned-but-unbuilt features and the extension points already in place for each. |
 | [decisions.md](decisions.md) | Design decisions and the rationale behind them ("why"). |

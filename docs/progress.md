@@ -1,7 +1,9 @@
 # Progress
 
-Status snapshot. Backend tests green: **318 unit + 4 integration** (`pytest`; the
-live round-trip skips rather than fails if the LLM API stalls).
+Status snapshot. Backend tests green: **344 unit + 14 BDD scenarios + 4
+integration** (`pytest`; the live round-trip skips rather than fails if the LLM
+API stalls). Coverage gate: 88% floor via `pytest --cov` (see
+[testing.md](testing.md) for the TDD/BDD workflow).
 Frontend: **32 tests** (`cd frontend && npm run test`).
 
 > The chatbot is a **control console** (chat UI + admin RAG management + chunk
@@ -124,6 +126,9 @@ integration with `pytest -m integration` (needs `docker compose up -d`).
 | `test_pipeline.py` | end-to-end pipeline incl. tier-2/3/4 paths + Adaptive-RAG injection + invariants |
 | `test_finalizer.py` | idle-session finalization: tier-2 fold, tier-3 force-extract, finalized_at, sweep selection + re-entrancy |
 | `test_production_hardening.py` | `APP_ENV=production` enforcement (JWT_SECRET / CORS / registration), Redis rate limiter + 429s on login/chat, dependency-checking `/health`, LLM timeout/retry wrapper |
+| `test_correlation.py` | OutboundWaiter: correlation matching, timeout cleanup, unmatched-ack, register-before-publish contract, concurrent waiters, reader resilience |
+| `test_worker_loop.py` | worker `run_once`: ack/leave-pending/reclaim, error-outbound for LLM failures, malformed messages, sweeper crash resilience |
+| `tests/bdd/` + `features/` | 14 Gherkin scenarios (memory, RAG citations, routing, auth/rate-limit, feedback, finalization) over World/ApiWorld facades — incl. a full gateway→stream→pipeline→stream→gateway chat |
 | `integration/test_roundtrip.py` | real Redis+Postgres inbound→outbound |
 | `integration/test_rag_roundtrip.py` | real Qdrant + OpenAI: ingest → dense + **hybrid** (BM25/RRF) search |
 | `integration/test_web_search_roundtrip.py` | real Brave API search + tool formatting (skips without key) |

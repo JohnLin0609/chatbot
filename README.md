@@ -182,7 +182,13 @@ provider is required; set a strong `JWT_SECRET` for the API.
 ## Tests
 
 ```bash
-pytest -m "not integration"        # backend unit (mocked redis/db/LLM)
+pytest                             # backend unit + BDD scenarios (mocked redis/db/LLM)
+pytest tests/bdd                   # Gherkin scenarios only (features/*.feature)
+pytest --cov                       # with the coverage gate (88% floor; CI runs this)
 pytest -m integration              # backend integration (needs docker compose up)
 cd frontend && npm run test        # frontend (Vitest)
 ```
+
+Workflow: TDD/BDD — new behavior starts as a failing Gherkin scenario in
+`features/`, bugfixes start as a failing regression test. See
+[docs/testing.md](docs/testing.md).
