@@ -19,7 +19,7 @@ RUN apt-get update \
 # (matches the host driver) and reserves the device — so plain `up` stays small
 # and only the opt-in GPU path pulls the multi-GB CUDA wheel.
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir torch --index-url ${TORCH_INDEX_URL}
+RUN pip install --no-cache-dir torch==2.12.0 --index-url ${TORCH_INDEX_URL}
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

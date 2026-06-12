@@ -1,6 +1,6 @@
 -r requirements.txt
-pytest
-pytest-asyncio
-httpx
-fakeredis
-aiosqlite
+pytest==9.0.3
+pytest-asyncio==1.4.0
+httpx==0.28.1
+fakeredis==2.36.0
+aiosqlite==0.22.1
